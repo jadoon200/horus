@@ -9,6 +9,8 @@ overlap a recorded *collector* outage (our own downtime must never be an inciden
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -22,7 +24,8 @@ from horus.timeutil import utc_naive
 log = get_logger(__name__)
 
 
-def _outage_windows(session: Session) -> list[tuple[object, object]]:
+def _outage_windows(session: Session) -> list[tuple[datetime, datetime | None]]:
+    """Recorded collector downtime, tz-normalized. An open outage has no close time."""
     return [
         (utc_naive(o.opened_at), utc_naive(o.closed_at) if o.closed_at else None)
         for o in session.scalars(select(CoverageOutage))
@@ -42,10 +45,8 @@ def detect_gaps(session: Session, region: str | None = None) -> list[Incident]:
         if prev is not None and prev.icao24 == p.icao24:
             t0, t1 = utc_naive(prev.ts), utc_naive(p.ts)
             gap_min = (t1 - t0).total_seconds() / 60.0
-            in_outage = any(
-                o0 <= t1 and (o1 is None or t0 <= o1)  # type: ignore[operator]
-                for o0, o1 in outages
-            )
+            # Half-open overlap: the silence intersects a recorded outage.
+            in_outage = any(o0 <= t1 and (o1 is None or t0 <= o1) for o0, o1 in outages)
             displacement = haversine_km(prev.lat, prev.lon, p.lat, p.lon)
             at_altitude = (prev.alt_baro_ft or 0.0) >= s.gap_min_altitude_ft
             if (
@@ -77,7 +78,9 @@ def detect_gaps(session: Session, region: str | None = None) -> list[Incident]:
                             "altitude_floor_ft": s.gap_min_altitude_ft,
                             "caveat": "a gap may be benign coverage loss; graded, not judged",
                         },
-                        region=region,
+                        # The data's own region, not the query filter: an unscoped run
+                        # must still stamp incidents with where the data came from.
+                        region=prev.region or region,
                     )
                 )
         prev = p

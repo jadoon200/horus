@@ -97,3 +97,62 @@ def test_rerun_is_idempotent() -> None:
         run_detectors(s)
         s.commit()
         assert len(_detected(s)) == n1
+
+
+def test_jamming_ids_do_not_depend_on_what_else_is_in_the_corpus() -> None:
+    """Time buckets must be anchored to a fixed epoch, not the corpus minimum.
+
+    Anchoring to "the earliest report we happen to hold" made bucket boundaries — and so
+    incident ids and even the incident COUNT — shift whenever earlier data arrived. A live
+    collector accumulates continuously, so that produced unstable ids and duplicated
+    incidents run over run. Reproduced before the fix: one unrelated report 7 minutes
+    earlier turned 3 incidents into 2 and renumbered every window.
+    """
+    from datetime import timedelta
+
+    from horus.detect.jamming import detect_jamming
+    from horus.ingest.adsb import AdsbSample
+    from horus.ingest.synthetic import SyntheticData
+
+    def ids_with(extra_earlier: bool) -> list[str]:
+        engine = create_engine("sqlite://")
+        Base.metadata.create_all(engine)
+        with Session(engine) as s:
+            data = generate()
+            samples = list(data.samples)
+            if extra_earlier:
+                first = samples[0]
+                samples.insert(
+                    0,
+                    AdsbSample(
+                        **{
+                            **first.__dict__,
+                            "icao24": "ffff01",
+                            "ts": first.ts - timedelta(minutes=7),
+                        }
+                    ),
+                )
+            seed_db(s, SyntheticData(samples=samples, labels=data.labels))
+            s.commit()
+            incidents, _ = detect_jamming(s)
+            return sorted(i.incident_id for i in incidents)
+
+    baseline = ids_with(False)
+    assert baseline, "the scenario must produce jamming incidents for this to test anything"
+    assert ids_with(True) == baseline
+
+
+def test_incidents_carry_the_data_region_not_the_query_filter() -> None:
+    """An unscoped run must still attribute incidents to where the data came from.
+
+    Detectors used to stamp `region=` from the *query filter*, so a full rebuild
+    (`run_detectors(session)` with no region) produced incidents with region NULL even
+    though every position was tagged — and `/air-picture?region=...` then returned nothing
+    for its own data.
+    """
+    with _seeded_session() as s:
+        run_detectors(s)
+        s.commit()
+        incidents = _detected(s)
+        assert incidents
+        assert {i.region for i in incidents} == {"synthetic"}

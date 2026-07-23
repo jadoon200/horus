@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import httpx
 import respx
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from horus.db.base import Base
@@ -98,3 +98,31 @@ def test_persist_dedups_and_upserts_identity() -> None:
         aircraft = db.get(Aircraft, "76ceef")
         assert aircraft is not None and aircraft.callsign == "SIA321"
         assert aircraft.type_code == "A359"
+
+
+def test_dedup_lookup_is_bounded_but_still_catches_duplicates() -> None:
+    """Re-polling must dedup, without scanning an aircraft's whole history each time.
+
+    The lookup is bounded to the batch's own time span: only a stored position whose
+    second-truncated timestamp matches one in the batch can collide. Unbounded, a
+    long-running collector would load every historical row for every aircraft in view on
+    every poll — a scaling trap for the live lane.
+    """
+    from datetime import timedelta
+
+    s1 = parse_aircraft(_GOOD, _NOW, max_seen_pos_seconds=60)
+    assert s1 is not None
+    with _session() as db:
+        # A year of history for this aircraft, far outside any future batch's window.
+        old = parse_aircraft(_GOOD, _NOW - timedelta(days=365), max_seen_pos_seconds=60)
+        assert old is not None
+        assert persist_samples(db, [old], source="adsb-lol", region="sg") == 1
+        db.commit()
+
+        # A fresh sample still inserts (history is irrelevant to it)...
+        assert persist_samples(db, [s1], source="adsb-lol", region="sg") == 1
+        db.commit()
+        # ...and re-polling the same sample is still deduped despite the bounded lookup.
+        assert persist_samples(db, [s1], source="adsb-lol", region="sg") == 0
+        db.commit()
+        assert db.scalar(select(func.count()).select_from(Position)) == 2

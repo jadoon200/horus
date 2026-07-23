@@ -37,6 +37,11 @@ class _Point:
     lat: float
     lon: float
     alt_ft: float | None
+    # Carried per point, not per aircraft: one aircraft can appear in more than one region
+    # (a live slice and a backfilled historical one), and stamping every track with
+    # whichever region happened to be seen last would mislabel tracks — which then makes a
+    # region-scoped rebuild delete the wrong rows.
+    region: str | None = None
 
 
 def _segments(points: list[_Point], gap_minutes: float) -> list[list[_Point]]:
@@ -104,12 +109,12 @@ def build_tracks(session: Session, region: str | None = None) -> int:
     session.execute(del_q)
 
     by_aircraft: dict[str, list[_Point]] = {}
-    regions: dict[str, str | None] = {}
     for p in session.scalars(pos_q):
         if p.on_ground:
             continue  # taxiing is not flight shape
-        by_aircraft.setdefault(p.icao24, []).append(_Point(p.ts, p.lat, p.lon, p.alt_baro_ft))
-        regions[p.icao24] = p.region
+        by_aircraft.setdefault(p.icao24, []).append(
+            _Point(p.ts, p.lat, p.lon, p.alt_baro_ft, p.region)
+        )
 
     n_tracks = 0
     for icao24, points in by_aircraft.items():
@@ -123,7 +128,7 @@ def build_tracks(session: Session, region: str | None = None) -> int:
                 Track(
                     track_id=f"{icao24}:{utc_naive(seg[0].ts).isoformat()}",
                     icao24=icao24,
-                    region=regions.get(icao24),
+                    region=seg[0].region,  # this segment's own region, not the aircraft's last
                     start_ts=seg[0].ts,
                     end_ts=seg[-1].ts,
                     point_count=len(seg),

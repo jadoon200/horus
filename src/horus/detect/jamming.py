@@ -29,6 +29,13 @@ from horus.timeutil import utc_naive
 
 log = get_logger(__name__)
 
+# Time buckets are anchored to a FIXED epoch, never to the corpus minimum. Anchoring to
+# "the earliest report we happen to hold" makes bucket boundaries — and therefore incident
+# ids and even the incident count — depend on what else is in the database: one unrelated
+# report arriving from slightly earlier would re-cut every window. A live collector
+# accumulates data continuously, so that is a reproducibility bug, not a theoretical one.
+_EPOCH = datetime(1970, 1, 1)
+
 
 @dataclass
 class _CellWindow:
@@ -37,6 +44,9 @@ class _CellWindow:
     worst_nic: dict[str, int] = field(default_factory=dict)
     ts_min: datetime | None = None
     ts_max: datetime | None = None
+    # Region of the data that formed this cell, so an unscoped run still attributes the
+    # incident to where the reports came from rather than to the (absent) query filter.
+    region: str | None = None
 
 
 @dataclass
@@ -59,20 +69,15 @@ def detect_jamming(
     window = timedelta(minutes=s.gnss_window_minutes)
     cell_deg = s.gnss_cell_deg
     cells: dict[tuple[int, int, int], _CellWindow] = {}
-    t0: datetime | None = None
-    for p in session.scalars(q):
-        ts = utc_naive(p.ts)
-        if t0 is None or ts < t0:
-            t0 = ts
-    if t0 is None:
-        return [], JammingRunStats()
 
+    # One pass. (This used to scan twice — once to find the corpus minimum timestamp — which
+    # both doubled the I/O and introduced the corpus-dependent bucketing described above.)
     for p in session.scalars(q):
         ts = utc_naive(p.ts)
         key = (
             int(p.lat // cell_deg),
             int(p.lon // cell_deg),
-            int((ts - t0) / window),
+            int((ts - _EPOCH) // window),
         )
         cw = cells.setdefault(key, _CellWindow())
         assert p.nic is not None
@@ -81,6 +86,8 @@ def detect_jamming(
             cw.worst_nic[p.icao24] = p.nic
         cw.ts_min = ts if cw.ts_min is None or ts < cw.ts_min else cw.ts_min
         cw.ts_max = ts if cw.ts_max is None or ts > cw.ts_max else cw.ts_max
+        if cw.region is None:
+            cw.region = p.region
 
     stats = JammingRunStats(cells_seen=len(cells))
     incidents: list[Incident] = []
@@ -119,7 +126,7 @@ def detect_jamming(
                     "cell_deg": cell_deg,
                     "window_minutes": s.gnss_window_minutes,
                 },
-                region=region,
+                region=cw.region or region,
             )
         )
     stats.incidents = len(incidents)

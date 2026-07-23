@@ -17,7 +17,7 @@ fused into a composite air picture over the Singapore FIR neighbourhood.
 > explainer-first React/Leaflet dashboard are all in place — 30 tests, mypy strict,
 > browser-verified. A first live 12.5-minute Singapore window (54 aircraft, 796 reports)
 > raised **zero false positives** and confirmed the NIC baseline on real traffic, while
-> exposing the method's real bound: **79.7% of cells were too sparse to score**. Numbers,
+> exposing the method's real bound: **83.3% of cells were too sparse to score**. Numbers,
 > including what that window does *not* establish, are in [docs/EVAL.md](docs/EVAL.md);
 > progress in [docs/ROADMAP.md](docs/ROADMAP.md).
 

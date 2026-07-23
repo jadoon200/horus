@@ -21,6 +21,10 @@ from horus.logging import get_logger
 
 log = get_logger(__name__)
 
+# Below this the train/val split has no meaningful validation partition; `train_model`
+# enforces the same floor, so keep the two in step.
+_MIN_TRACKS_TO_TRAIN = 5
+
 
 def iforest_scores(features: list[list[float]], seed: int = 7) -> np.ndarray:
     """Isolation-Forest anomaly scores (higher = more anomalous)."""
@@ -44,15 +48,21 @@ def pca_scores(features: list[list[float]], n_components: int = 4) -> np.ndarray
 
 def detect_anomalies(
     session: Session, region: str | None = None, *, epochs: int = 60
-) -> tuple[list[Incident], AnomalyModel]:
-    """Train the flagship on all stored sequences (unsupervised), persist incidents."""
+) -> tuple[list[Incident], AnomalyModel | None]:
+    """Train the flagship on all stored sequences (unsupervised), persist incidents.
+
+    Returns `(incidents, model)`. The model is **None** when there were too few tracks to
+    train on — the honest signal that no scoring happened. (This used to claim an
+    `AnomalyModel` and return None behind a `type: ignore`, so a caller that touched the
+    model on a thin corpus got an AttributeError instead of a type error.)
+    """
     q = select(Track).where(Track.sequence.is_not(None))
     if region:
         q = q.where(Track.region == region)
     tracks = list(session.scalars(q))
-    if len(tracks) < 5:
+    if len(tracks) < _MIN_TRACKS_TO_TRAIN:
         log.warning("detect_anomalies_skipped", tracks=len(tracks))
-        return [], None  # type: ignore[return-value]
+        return [], None
 
     sequences = [t.sequence for t in tracks if t.sequence is not None]
     model = train_model(sequences, epochs=epochs)
@@ -85,7 +95,7 @@ def detect_anomalies(
                     "point_count": track.point_count,
                     "caveat": "unusual shape, not a verdict — e.g. survey/patrol patterns",
                 },
-                region=region,
+                region=track.region or region,
             )
         )
     session.add_all(incidents)

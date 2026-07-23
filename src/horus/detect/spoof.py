@@ -65,7 +65,7 @@ def detect_spoof(session: Session, region: str | None = None) -> list[Incident]:
                     "ceiling_kt": s.spoof_max_speed_kt,
                     "caveat": "may be two units sharing an address or feed corruption",
                 },
-                region=region,
+                region=hits[0].region or region,
             )
         )
     log.info("detect_spoof", incidents=len(incidents))

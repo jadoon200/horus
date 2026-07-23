@@ -63,7 +63,7 @@ def detect_incursions(session: Session, region: str | None = None) -> list[Incid
                     "max_alt_ft": max(float(p.alt_baro_ft or 0.0) for p in samples),
                     "caveat": "watch rings are illustrative, not authoritative airspace",
                 },
-                region=region,
+                region=samples[0].region or region,
             )
         )
     log.info("detect_incursions", incidents=len(incidents))

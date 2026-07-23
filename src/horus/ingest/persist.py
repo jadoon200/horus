@@ -9,6 +9,7 @@ from the PHAROS pilot).
 from __future__ import annotations
 
 from collections.abc import Iterable
+from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -19,6 +20,10 @@ from horus.logging import get_logger
 from horus.timeutil import utc_naive
 
 log = get_logger(__name__)
+
+# Slack around a batch's time span when checking for already-stored duplicates; covers
+# sub-second truncation without widening the scan.
+_DEDUP_MARGIN = timedelta(minutes=1)
 
 
 def _upsert_aircraft(session: Session, sample: AdsbSample) -> None:
@@ -53,10 +58,18 @@ def persist_samples(
     if not batch:
         return 0
     icaos = {s.icao24 for s in batch}
+    # Bound the dedup lookup to the batch's own time span. Only a stored position whose
+    # second-truncated timestamp equals one in this batch can collide, so a wider window is
+    # wasted work — and unbounded it is a scaling trap: a long-running collector would load
+    # every historical row for every aircraft currently in view on each poll.
+    lo = min(s.ts for s in batch) - _DEDUP_MARGIN
+    hi = max(s.ts for s in batch) + _DEDUP_MARGIN
     existing = {
         (icao, utc_naive(ts).replace(microsecond=0))
         for icao, ts in session.execute(
-            select(Position.icao24, Position.ts).where(Position.icao24.in_(icaos))
+            select(Position.icao24, Position.ts).where(
+                Position.icao24.in_(icaos), Position.ts >= lo, Position.ts <= hi
+            )
         )
     }
     inserted = 0

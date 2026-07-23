@@ -15,8 +15,8 @@ A 12.5-minute keyless `adsb.lol` collection over the Singapore FIR
 | Positions persisted | 796 |
 | Distinct aircraft | 54 |
 | Tracks built | 37 |
-| Grid cells observed | 74 |
-| Cells **unscoreable** (too few aircraft) | 59 (79.7%) |
+| Grid cells observed | 96 |
+| Cells **unscoreable** (too few aircraft) | 80 (83.3%) |
 | Incidents raised (all four deterministic detectors) | **0** |
 
 **The NIC baseline is confirmed on real traffic.** Every one of the 796 real
@@ -36,7 +36,7 @@ appear to hold. **The jamming detector, however, was never challenged**: with
 zero degraded aircraft there was nothing to detect, so this window is evidence
 about false positives only and says nothing about jamming recall.
 
-**The dominant real limitation: 79.7% of cells are unscoreable.** At this
+**The dominant real limitation: 83.3% of cells are unscoreable.** At this
 traffic density most 0.5° cells simply do not contain the 4 aircraft the
 detector requires, so they are skipped rather than scored. This is the
 small-sample honesty rule doing exactly its job, and it bounds where the
@@ -44,6 +44,11 @@ method works: GNSS-interference detection is viable over busy airways and
 terminal areas, and is *structurally* blind over empty sky. A longer window
 raises aircraft-per-cell and shrinks this fraction; it does not remove the
 constraint.
+
+(These cell counts were restated after the time-bucket anchoring fix: buckets are now
+anchored to a fixed epoch rather than the corpus minimum, which re-cuts window boundaries.
+The earlier figures for this same window were 59/74 = 79.7%. Detection outcomes on the
+synthetic gold set were unchanged by the fix.)
 
 **What this window does not establish:** jamming recall (no event occurred),
 trajectory-anomaly quality on real tracks (37 tracks over 12.5 minutes is too

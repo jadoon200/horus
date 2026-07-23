@@ -49,3 +49,52 @@ def test_rebuild_is_idempotent() -> None:
         s.commit()
         assert first == second
         assert len(list(s.scalars(select(Track)))) == second
+
+
+def test_track_region_comes_from_its_own_segment_not_the_aircraft() -> None:
+    """One aircraft can appear in two regions; each track must keep its own.
+
+    Stamping every track with whichever region was seen last for that aircraft mislabelled
+    tracks in a multi-region database, which then made a region-scoped rebuild
+    (`delete(Track).where(Track.region == region)`) delete the wrong rows.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from horus.db.models import Aircraft, Position
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        s.add(Aircraft(icao24="abc123"))
+        base = datetime(2026, 7, 1, tzinfo=UTC)
+        # 20 points in "historical", then a 2-hour break, then 20 in "sg-live".
+        for i in range(20):
+            s.add(
+                Position(
+                    icao24="abc123",
+                    ts=base + timedelta(seconds=30 * i),
+                    lat=1.3 + 0.01 * i,
+                    lon=103.8,
+                    alt_baro_ft=35000.0,
+                    region="historical",
+                )
+            )
+        for i in range(20):
+            s.add(
+                Position(
+                    icao24="abc123",
+                    ts=base + timedelta(hours=2, seconds=30 * i),
+                    lat=1.3 + 0.01 * i,
+                    lon=104.2,
+                    alt_baro_ft=35000.0,
+                    region="sg-live",
+                )
+            )
+        s.commit()
+
+        build_tracks(s)
+        s.commit()
+        by_region = {t.region for t in s.scalars(select(Track))}
+        assert by_region == {"historical", "sg-live"}, (
+            "each segment must carry its own region, not the aircraft's last-seen one"
+        )
