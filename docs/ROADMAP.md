@@ -13,7 +13,7 @@ Honest status ledger — ✅ built & gated, 🔨 in progress, ⬜ planned.
 | M6 | Honest eval harness → docs/EVAL.md (synthetic = ceiling; live-data validation is the number that counts; recorded negatives) | ✅ harness; real-data block pending M9 |
 | M7 | Read-only hardened API + `/geoint/evidence`-shaped export for the ARGUS bridge | ⬜ |
 | M8 | React + Leaflet dashboard: Air Picture map, Incidents feed, and a first-class "How it works" explainer view | ⬜ |
-| M9 | Live Singapore collection window + real-data validation write-up | ⬜ |
+| M9 | Live Singapore collection window + real-data validation write-up | ✅ first 12.5-min window measured (0 FPs, NIC baseline confirmed, 79.7% cells unscoreable); multi-day run still open |
 
 ## Design decisions already locked
 

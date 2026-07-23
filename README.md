@@ -11,15 +11,15 @@ fused into a composite air picture over the Singapore FIR neighbourhood.
 > above it — together a joint air + sea domain picture over the world's busiest strait.
 > Named for the falcon-eyed sky god (a deliberate pair with PHAROS's Alexandrian lighthouse).
 
-> **Status: core system built and gated.** Collection (keyless adsb.lol poller with a
-> run/outage ledger + a deterministic labelled synthetic gold set), track building, the
-> five-detector battery (GNSS-interference flagship, dark-aircraft gap, watch-box
-> incursion, kinematic spoof, GRU trajectory anomaly vs fair baselines), the composite
-> air-picture rollup, and the honest eval harness are in place — 26 tests, mypy strict.
-> Next: the read-only API + ARGUS evidence bridge and the explainer-first React/Leaflet
-> dashboard, then a live Singapore collection window. Tracked honestly in
-> [docs/ROADMAP.md](docs/ROADMAP.md); numbers live in [docs/EVAL.md](docs/EVAL.md)
-> (synthetic = ceiling; the recorded negative — linear PCA beats the GRU there — stays).
+> **Status: core system built, gated, and exercised on real ADS-B.** Collection, track
+> building, the five-detector battery (GNSS-interference flagship), the composite air
+> picture, the honest eval harness, the read-only API + ARGUS evidence bridge, and the
+> explainer-first React/Leaflet dashboard are all in place — 30 tests, mypy strict,
+> browser-verified. A first live 12.5-minute Singapore window (54 aircraft, 796 reports)
+> raised **zero false positives** and confirmed the NIC baseline on real traffic, while
+> exposing the method's real bound: **79.7% of cells were too sparse to score**. Numbers,
+> including what that window does *not* establish, are in [docs/EVAL.md](docs/EVAL.md);
+> progress in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Why the air domain, why GNSS interference
 
