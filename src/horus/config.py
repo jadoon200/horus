@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     # and it is tracked as its own tier rather than folded into the same count.
     gnss_hard_loss_nic: int = 0
     gnss_hard_loss_nac_p: int = 0
+    # Multi-resolution scoring: how many times the cell may be doubled when the fine grid
+    # holds too few aircraft. A fixed size is always wrong somewhere — at 0.5° over
+    # Singapore 83% of cells were unscoreable — so sky that fails the minimum falls through
+    # to a coarser level, and the level used is recorded on the incident. 0 disables.
+    gnss_coarsen_levels: int = 2
 
     # --- Dark-aircraft (transponder gap) detector ---------------------------------------
     # The coverage confound is *worse* than AIS: low-altitude traffic drops out of
