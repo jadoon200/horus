@@ -42,6 +42,10 @@ class _CellWindow:
     """Observed aircraft → worst NIC inside one grid cell x time window."""
 
     worst_nic: dict[str, int] = field(default_factory=dict)
+    # Second integrity channel, tracked per aircraft alongside NIC. Healthy traffic never
+    # reports NACp 0 (measured), so NIC and NACp collapsing together is a much sharper
+    # signature than either alone.
+    worst_nac_p: dict[str, int] = field(default_factory=dict)
     ts_min: datetime | None = None
     ts_max: datetime | None = None
     # Region of the data that formed this cell, so an unscoped run still attributes the
@@ -84,6 +88,10 @@ def detect_jamming(
         prev = cw.worst_nic.get(p.icao24)
         if prev is None or p.nic < prev:
             cw.worst_nic[p.icao24] = p.nic
+        if p.nac_p is not None:
+            prev_nac = cw.worst_nac_p.get(p.icao24)
+            if prev_nac is None or p.nac_p < prev_nac:
+                cw.worst_nac_p[p.icao24] = p.nac_p
         cw.ts_min = ts if cw.ts_min is None or ts < cw.ts_min else cw.ts_min
         cw.ts_max = ts if cw.ts_max is None or ts > cw.ts_max else cw.ts_max
         if cw.region is None:
@@ -100,6 +108,16 @@ def detect_jamming(
         frac = len(degraded) / total
         if frac < s.gnss_bad_fraction_threshold:
             continue
+        # Hard loss = both integrity channels collapsed on the same aircraft. Healthy
+        # traffic never reports NACp 0, so two-channel agreement is the sharp tier; an
+        # aircraft that never broadcast NACp is judged on NIC alone rather than assumed.
+        hard_loss = {
+            a
+            for a, n in degraded.items()
+            if n <= s.gnss_hard_loss_nic
+            and cw.worst_nac_p.get(a, s.gnss_hard_loss_nac_p) <= s.gnss_hard_loss_nac_p
+        }
+        hard_frac = len(hard_loss) / total
         lat = (ci + 0.5) * cell_deg
         lon = (cj + 0.5) * cell_deg
         assert cw.ts_min is not None and cw.ts_max is not None
@@ -108,8 +126,9 @@ def detect_jamming(
                 incident_id=f"jam:{ci}:{cj}:{wk}",
                 detector="jamming",
                 incident_type="GNSS interference",
-                # Confidence grows with how completely the cell degraded.
-                score=0.5 + 0.5 * frac,
+                # Confidence grows with how completely the cell degraded, and again when
+                # the second channel corroborates the first.
+                score=min(1.0, 0.5 + 0.4 * frac + 0.1 * hard_frac),
                 reliability=grade_samples(total),
                 ts_start=cw.ts_min,
                 ts_end=cw.ts_max,
@@ -121,6 +140,9 @@ def detect_jamming(
                     "aircraft_observed": total,
                     "aircraft_degraded": len(degraded),
                     "degraded_fraction": round(frac, 3),
+                    "aircraft_hard_loss": len(hard_loss),
+                    "hard_loss_fraction": round(hard_frac, 3),
+                    "hard_loss_aircraft": sorted(hard_loss),
                     "worst_nic_by_aircraft": dict(sorted(degraded.items())),
                     "bad_nic_max": s.gnss_bad_nic_max,
                     "cell_deg": cell_deg,

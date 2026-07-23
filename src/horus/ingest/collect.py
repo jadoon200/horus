@@ -37,10 +37,22 @@ _PAUSE_BRIDGE_SECONDS_MIN = 120.0
 _PAUSE_BRIDGE_POLL_FACTOR = 4.0
 
 
-def collect_once(session: Session, *, region: str | None) -> int:
-    """One poll → persist; returns inserted row count. Raises on fetch failure."""
+def collect_once(
+    session: Session,
+    *,
+    region: str | None,
+    centre: tuple[float, float] | None = None,
+    radius_nm: int | None = None,
+) -> int:
+    """One poll → persist; returns inserted row count. Raises on fetch failure.
+
+    `centre`/`radius_nm` override the configured collection circle, which is how a second
+    lane over a different part of the world is run against the same code path (e.g. a
+    positive-control region with known GNSS interference alongside the Singapore lane).
+    """
     s = get_settings()
-    samples = fetch_point()
+    lat, lon = centre if centre is not None else (None, None)
+    samples = fetch_point(lat, lon, radius_nm)
     return persist_samples(session, samples, source=s.adsb_source_label, region=region)
 
 
@@ -84,7 +96,13 @@ def bridge_previous_run(session: Session, run_id: int, *, poll_seconds: float) -
     return True
 
 
-def run_collector(*, cycles: int | None, region: str | None) -> None:
+def run_collector(
+    *,
+    cycles: int | None,
+    region: str | None,
+    centre: tuple[float, float] | None = None,
+    radius_nm: int | None = None,
+) -> None:
     """Poll until stopped (or for `cycles` polls), maintaining the run/outage ledger."""
     s = get_settings()
     with session_scope() as session:
@@ -118,7 +136,9 @@ def run_collector(*, cycles: int | None, region: str | None) -> None:
                     )
             try:
                 with session_scope() as session:
-                    inserted = collect_once(session, region=region)
+                    inserted = collect_once(
+                        session, region=region, centre=centre, radius_nm=radius_nm
+                    )
                     run_row = session.get(CollectorRun, run_id)
                     assert run_row is not None
                     run_row.last_message_at = datetime.now(UTC)
@@ -166,8 +186,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Poll adsb.lol into the database")
     parser.add_argument("--cycles", type=int, default=None, help="stop after N polls")
     parser.add_argument("--region", default="sg-live", help="dataset slice label")
+    parser.add_argument("--lat", type=float, default=None, help="collection centre latitude")
+    parser.add_argument("--lon", type=float, default=None, help="collection centre longitude")
+    parser.add_argument("--radius-nm", type=int, default=None, help="collection radius (nm)")
     args = parser.parse_args()
-    run_collector(cycles=args.cycles, region=args.region)
+    centre = None if args.lat is None or args.lon is None else (args.lat, args.lon)
+    run_collector(cycles=args.cycles, region=args.region, centre=centre, radius_nm=args.radius_nm)
 
 
 if __name__ == "__main__":

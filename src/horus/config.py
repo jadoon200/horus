@@ -46,6 +46,13 @@ class Settings(BaseSettings):
     # and an incident needs at least this fraction of them degraded.
     gnss_min_aircraft: int = 4
     gnss_bad_fraction_threshold: float = 0.5
+    # Hard integrity loss: measured over real interference (Baltic, 2026-07-23), degradation
+    # is near-binary rather than gradual — 18 of 20 degraded aircraft sat at exactly NIC 0,
+    # and NACp collapsed with it (15 at NACp 0), while healthy traffic never reported NACp
+    # below 8. So NIC 0 corroborated by NACp 0 is a far sharper signature than the ≤5 band,
+    # and it is tracked as its own tier rather than folded into the same count.
+    gnss_hard_loss_nic: int = 0
+    gnss_hard_loss_nac_p: int = 0
 
     # --- Dark-aircraft (transponder gap) detector ---------------------------------------
     # The coverage confound is *worse* than AIS: low-altitude traffic drops out of
