@@ -1,0 +1,115 @@
+/** Typed client for the HORUS read-only air-domain-awareness API. */
+
+// Same-origin in a production build (FastAPI serves this SPA and the API from one host);
+// localhost:8000 in dev (`make ui` on :5199 talks to `make api` on :8000). VITE_API_URL overrides.
+const BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.PROD ? '' : 'http://localhost:8000')
+
+export interface Health {
+  status: string
+  version: string
+}
+
+export interface Stats {
+  aircraft: number
+  positions: number
+  tracks: number
+  incidents: number
+  incidents_by_detector: Record<string, number>
+}
+
+export interface Incident {
+  incident_id: string
+  icao24: string | null
+  track_id: string | null
+  detector: string
+  incident_type: string
+  score: number
+  severity: string
+  reliability: string // NATO-Admiralty ADS-B-confidence grade A-F
+  ts_start: string
+  ts_end: string | null
+  lat: number | null
+  lon: number | null
+  zone: string | null
+  affected_count: number | null
+  techniques: string[]
+  evidence: Record<string, unknown>
+}
+
+export interface AircraftRollup {
+  icao24: string
+  risk: number
+  risk_breakdown: {
+    best_incident_score: number
+    agreeing_detectors: number
+    agreement_bonus: number
+    sensitive_zone_bonus: number
+  }
+  detectors: string[]
+  techniques: string[]
+  reliability: string
+  incidents: string[]
+  zone: string | null
+  ts_start: string
+}
+
+export interface AreaIncident {
+  incident_id: string
+  incident_type: string
+  score: number
+  severity: string
+  reliability: string
+  lat: number | null
+  lon: number | null
+  zone: string | null
+  affected_count: number | null
+  ts_start: string
+  ts_end: string | null
+  evidence: Record<string, unknown>
+}
+
+export interface AirPicture {
+  aircraft: AircraftRollup[]
+  areas: AreaIncident[]
+}
+
+export interface GeoFeature {
+  type: 'Feature'
+  geometry: { type: string; coordinates: unknown }
+  properties: Record<string, unknown>
+}
+
+export interface FeatureCollection {
+  type: 'FeatureCollection'
+  features: GeoFeature[]
+}
+
+async function get<T>(path: string): Promise<T> {
+  const res = await fetch(`${BASE}${path}`)
+  if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`)
+  return res.json() as Promise<T>
+}
+
+export const api = {
+  health: () => get<Health>('/health'),
+  stats: () => get<Stats>('/stats'),
+  incidents: (detector?: string) =>
+    get<Incident[]>(`/incidents${detector ? `?detector=${detector}` : ''}`),
+  airPicture: () => get<AirPicture>('/air-picture'),
+  zones: () => get<FeatureCollection>('/zones'),
+  tracks: () => get<FeatureCollection>('/tracks'),
+}
+
+/** Reliability grade → tone + human label (NATO Admiralty system, ADS-B confidence). */
+export function reliabilityMeta(grade: string): { label: string; tone: string } {
+  const labels: Record<string, string> = {
+    A: 'Completely reliable',
+    B: 'Usually reliable',
+    C: 'Fairly reliable',
+    D: 'Not usually reliable',
+    E: 'Unreliable',
+    F: 'Cannot be judged',
+  }
+  const tone = grade <= 'B' ? 'good' : grade <= 'C' ? 'mid' : 'weak'
+  return { label: labels[grade] ?? grade, tone }
+}
