@@ -216,16 +216,19 @@ def generate(seed: int = 7, n_cruise: int = 24, n_low: int = 5) -> SyntheticData
     add_label("jamming", None, JAM_WINDOW[0], JAM_WINDOW[1], lat=JAM_CENTER[0], lon=JAM_CENTER[1])
 
     # --- benign low-altitude flights with coverage dropouts (gap confounder) -----------
-    # Silent below the altitude floor: normal terrain-limited reception, NOT a dark aircraft.
+    # Silent below the altitude floor: normal terrain-limited reception, NOT a dark
+    # aircraft. Kept north of (and heading parallel to) the Riau border box so this
+    # confounder tests the gap detector's altitude floor, not the incursion ring —
+    # each trap must isolate one detector's failure mode.
     for i in range(n_low):
         icao = f"c{i:05x}"
         dropout = set(range(50, 70)) if i % 2 == 0 else set()
         data.samples += _line_flight(
             rng,
             icao,
-            lat0=rng.uniform(0.9, 1.4),
+            lat0=rng.uniform(1.2, 1.45),
             lon0=rng.uniform(103.3, 104.3),
-            heading_deg=rng.uniform(0, 360),
+            heading_deg=rng.choice([90.0, 270.0]) + rng.uniform(-2, 2),
             gs_kt=rng.uniform(140, 220),
             alt_ft=rng.uniform(1_500, 7_000),
             jam_affected=False,

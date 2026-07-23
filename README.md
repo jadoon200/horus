@@ -11,11 +11,15 @@ fused into a composite air picture over the Singapore FIR neighbourhood.
 > above it — together a joint air + sea domain picture over the world's busiest strait.
 > Named for the falcon-eyed sky god (a deliberate pair with PHAROS's Alexandrian lighthouse).
 
-> **Status: early scaffold.** Schema, config, airspace zone registry, geo primitives, and
-> the migration/parity test gate are in place. Collection (adsb.lol poller + deterministic
-> labelled synthetic generator), the detector ensemble (GNSS-interference flagship), the
-> honest eval harness, the read-only API, and the React/Leaflet dashboard are being built —
-> tracked honestly in [docs/ROADMAP.md](docs/ROADMAP.md).
+> **Status: core system built and gated.** Collection (keyless adsb.lol poller with a
+> run/outage ledger + a deterministic labelled synthetic gold set), track building, the
+> five-detector battery (GNSS-interference flagship, dark-aircraft gap, watch-box
+> incursion, kinematic spoof, GRU trajectory anomaly vs fair baselines), the composite
+> air-picture rollup, and the honest eval harness are in place — 26 tests, mypy strict.
+> Next: the read-only API + ARGUS evidence bridge and the explainer-first React/Leaflet
+> dashboard, then a live Singapore collection window. Tracked honestly in
+> [docs/ROADMAP.md](docs/ROADMAP.md); numbers live in [docs/EVAL.md](docs/EVAL.md)
+> (synthetic = ceiling; the recorded negative — linear PCA beats the GRU there — stays).
 
 ## Why the air domain, why GNSS interference
 
