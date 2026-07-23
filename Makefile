@@ -1,4 +1,4 @@
-.PHONY: env install lint typecheck test check up down migrate collect tracks detect eval api ui
+.PHONY: env install lint typecheck test check up down migrate collect collector-install collector-stop health prune tracks detect eval api ui
 
 # One-time: create the conda env, then `conda activate horus`
 env:
@@ -32,6 +32,23 @@ migrate:
 # Poll the free adsb.lol feed over the configured centre/radius into the DB.
 collect:
 	python -m horus.ingest.collect
+
+# Install / stop the continuous low-priority collector as a macOS launch agent.
+collector-install:
+	cp ops/com.horus.collector.plist ~/Library/LaunchAgents/
+	launchctl load ~/Library/LaunchAgents/com.horus.collector.plist
+	@echo "installed; check with: launchctl list | grep horus"
+
+collector-stop:
+	launchctl unload ~/Library/LaunchAgents/com.horus.collector.plist
+
+# One-shot health glance at the live lane (read-only).
+health:
+	python -m scripts.collector_health
+
+# Retention pass over the live database (delete, commit, then WAL-checkpoint).
+prune:
+	python -m scripts.prune_live
 
 # Build per-aircraft flight segments (tracks) from positions.
 tracks:

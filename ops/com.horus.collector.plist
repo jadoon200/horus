@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Continuous Singapore ADS-B collector, run as a low-priority background agent.
+
+  Install:
+    cp ops/com.horus.collector.plist ~/Library/LaunchAgents/
+    launchctl load  ~/Library/LaunchAgents/com.horus.collector.plist
+    launchctl list | grep horus
+  Stop:
+    launchctl unload ~/Library/LaunchAgents/com.horus.collector.plist
+
+  Nice/LowPriorityIO/Background keep it out of the way of interactive work; KeepAlive
+  restarts it after a crash, and the collector bridges the resulting downtime into the
+  coverage ledger so a restart never looks like aircraft going dark.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.horus.collector</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/jayden/anaconda3/envs/argus/bin/python</string>
+        <string>-m</string>
+        <string>horus.ingest.collect</string>
+        <string>--region</string>
+        <string>sg-live</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/jayden/code-projects/horus</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/jayden/code-projects/horus/src</string>
+        <key>HORUS_DATABASE_URL</key>
+        <string>sqlite:////Users/jayden/code-projects/horus/data/sg-live.db</string>
+        <key>OMP_NUM_THREADS</key>
+        <string>2</string>
+        <key>VECLIB_MAXIMUM_THREADS</key>
+        <string>2</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>Nice</key>
+    <integer>5</integer>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/jayden/Library/Logs/horus-collector.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jayden/Library/Logs/horus-collector-error.log</string>
+</dict>
+</plist>
