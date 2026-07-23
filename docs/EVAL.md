@@ -4,6 +4,84 @@ Every claim here is reported on the number that survives scrutiny; the
 synthetic block below is explicitly a ceiling. The real-data section comes
 first because it is the only part that constitutes evidence about capability.
 
+## Controlled evaluation — known-interference sky vs clean sky (2026-07-23)
+
+A quiet sky proves nothing on its own. Zero incidents over Singapore is equally consistent
+with *"the detector works and there is no interference"* and *"the detector never fires"*,
+and nothing in a single-region window distinguishes them. The answer is a control pair.
+
+Two lanes were collected **simultaneously** through the same code path with identical
+detector parameters, differing only in where the collection circle was centred: the Baltic
+(250 nm around 54.9 N, 20.5 E — a region with widely reported, ongoing GNSS interference)
+as the positive control, and the Singapore FIR as the negative control. Both lanes are
+restricted below to the wall-clock window in which both were collecting, so traffic
+density, time of day and detector configuration are held constant.
+
+| Measure | Baltic (positive control) | Singapore (negative control) |
+|---|---:|---:|
+| Collection span (min) | 13.8 | 13.7 |
+| Reports carrying NIC | 2,609 | 572 |
+| Distinct aircraft | 159 | 39 |
+| Reports degraded (NIC ≤ 5) | 392 (15.0%) | 1 (0.2%) |
+| Reports in hard loss (NIC 0 **and** NACp 0) | 322 | 0 |
+| Cells observed | 359 | 167 |
+| Cells unscoreable | 91 (25.3%) | 44 (26.3%) |
+| **Incidents raised** | **15** | **0** |
+| Highest cell degraded-fraction | 1.00 | 0.00 |
+
+NIC distribution, Baltic: `{0: 340, 1: 1, 2: 2, 3: 26, 4: 4, 5: 19, 6: 44, 7: 86, 8: 1747,
+9: 145, 10: 35, 11: 160}` — against Singapore: `{0: 1, 7: 2, 8: 569}`.
+
+**What this establishes.** The detector separates the two skies cleanly under identical
+settings, with the strongest Baltic cells reaching 1.00 (every observed aircraft in the
+cell degraded). The unscoreable fractions are within a point of each other, so the contrast
+is not an artefact of one lane being better covered than the other.
+
+**The negative control's single degraded report is the most informative number here.**
+Singapore recorded exactly one NIC-0 report in the window and the detector raised **zero**
+incidents from it. That is the lone-dip rule working on real data rather than on an
+injected synthetic trap: one aircraft's integrity dropping is an avionics event, and only
+a corroborated cluster is treated as an area signal.
+
+**What this does not establish.** This is a *contrast, not precision or recall.* The Baltic
+region has no per-cell ground-truth mask — nobody publishes which 0.5° cell was jammed in
+which 10-minute window — so no true/false positive count is available and none is claimed.
+It bounds the detector's behaviour at the two ends (fires on known interference, silent on
+clean sky) and nothing between them.
+
+Reproduce:
+
+```bash
+HORUS_DATABASE_URL=sqlite:///data/baltic-control.db python -m horus.ingest.collect \
+    --cycles 26 --region baltic-control --lat 54.9 --lon 20.5
+python -m scripts.eval_control \
+    --positive data/baltic-control.db --negative data/sg-live.db --overlap
+```
+
+Interference is not static — a future run over the same box may find a clean sky, which is
+a property of the world rather than a regression in the detector.
+
+## Multi-resolution scoring — the unscoreable-cell problem
+
+The first Singapore window's dominant limitation was that **83% of cells held too few
+aircraft to score**. The detector was not mis-thresholded; it was blind over most of the
+map. Cells are now aggregated finest-first, and sky failing the aircraft minimum falls
+through to a coarser level, with the level that answered it recorded on the incident.
+
+Measured on the real Singapore window (135 cells):
+
+| Coarsening levels | Cells unscoreable | Incidents |
+|---|---:|---:|
+| 0 (fixed 0.5°) | 112 (83.0%) | 0 |
+| 1 | 72 (53.3%) | 0 |
+| **2 (default)** | **32 (23.7%)** | **0** |
+| 3 | 18 (13.3%) | 0 |
+
+Scoreable map coverage rises from 17% to 76% while incidents stay at zero over clean sky,
+so the added coverage costs nothing in false positives. A coarse cell is a weaker spatial
+claim than a fine one, which is why the resolution travels with the incident rather than
+being implied.
+
 ## Real ADS-B — first live Singapore window (2026-07-23)
 
 A 12.5-minute keyless `adsb.lol` collection over the Singapore FIR
@@ -16,7 +94,7 @@ A 12.5-minute keyless `adsb.lol` collection over the Singapore FIR
 | Distinct aircraft | 54 |
 | Tracks built | 37 |
 | Grid cells observed | 96 |
-| Cells **unscoreable** (too few aircraft) | 80 (83.3%) |
+| Cells **unscoreable** (too few aircraft, fixed-resolution) | 80 (83.3%) |
 | Incidents raised (all four deterministic detectors) | **0** |
 
 **The NIC baseline is confirmed on real traffic.** Every one of the 796 real
@@ -32,9 +110,10 @@ non-trivial half: real feeds carry receiver dropouts, coasted plots and
 identity churn that naive thresholds turn into incidents (the sibling PHAROS
 project's first real maritime run produced 2,999 false positives before three
 domain fixes cut them ~98%). HORUS's parse-time and altitude-floor guards
-appear to hold. **The jamming detector, however, was never challenged**: with
-zero degraded aircraft there was nothing to detect, so this window is evidence
-about false positives only and says nothing about jamming recall.
+appear to hold. **The jamming detector, however, was never challenged in this
+window**: with zero degraded aircraft there was nothing to detect, so on its own
+this window is evidence about false positives only. That gap is what the
+controlled evaluation above exists to close.
 
 **The dominant real limitation: 83.3% of cells are unscoreable.** At this
 traffic density most 0.5° cells simply do not contain the 4 aircraft the
@@ -43,17 +122,19 @@ small-sample honesty rule doing exactly its job, and it bounds where the
 method works: GNSS-interference detection is viable over busy airways and
 terminal areas, and is *structurally* blind over empty sky. A longer window
 raises aircraft-per-cell and shrinks this fraction; it does not remove the
-constraint.
+constraint. **Superseded in part:** multi-resolution scoring (above) cuts this
+share to 23.7% on the same data by answering sparse sky at a coarser cell; the
+83.3% figure is the fixed-resolution behaviour retained here for comparison.
 
 (These cell counts were restated after the time-bucket anchoring fix: buckets are now
 anchored to a fixed epoch rather than the corpus minimum, which re-cuts window boundaries.
 The earlier figures for this same window were 59/74 = 79.7%. Detection outcomes on the
 synthetic gold set were unchanged by the fix.)
 
-**What this window does not establish:** jamming recall (no event occurred),
-trajectory-anomaly quality on real tracks (37 tracks over 12.5 minutes is too
-few and too short to train the GRU honestly), or any behaviour across a
-diurnal cycle. Those need a multi-day collection and are not claimed here.
+**What this window does not establish:** trajectory-anomaly quality on real
+tracks (37 tracks over 12.5 minutes is too few and too short to train the GRU
+honestly), or any behaviour across a diurnal cycle. Those need a multi-day
+collection and are not claimed here.
 
 Reproduce:
 
@@ -67,7 +148,7 @@ HORUS_DATABASE_URL=sqlite:///data/sg-live.db python -m horus.ingest.collect --cy
 Injected events are separable by construction; the informative read is the
 *confounder* rows (did benign traps stay quiet?) and the baseline gaps.
 
-- **GNSS interference (flagship):** 1/1 labelled events detected; 3 incident cell-windows, 0 outside the labelled area; 466/498 cells unscoreable (too few aircraft — skipped honestly, never scored).
+- **GNSS interference (flagship):** 1/1 labelled events detected; 4 incident cell-windows, 0 outside the labelled area; 173/498 cells unscoreable (too few aircraft — skipped honestly, never scored).
 - **gap:** recall 1.0, precision 1.0 (expected ['d00001', 'd00002'], detected ['d00001', 'd00002'], FP [])
 - **incursion:** recall 1.0, precision 1.0 (expected ['e00001'], detected ['e00001'], FP [])
 - **spoof:** recall 1.0, precision 1.0 (expected ['f00bad'], detected ['f00bad'], FP [])

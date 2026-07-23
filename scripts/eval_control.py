@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import create_engine, func, select
@@ -27,6 +28,7 @@ from sqlalchemy.orm import Session
 from horus.db.models import Position
 from horus.detect.jamming import detect_jamming
 from horus.logging import configure_logging
+from horus.timeutil import utc_naive
 
 
 @dataclass
@@ -52,10 +54,28 @@ class LaneResult:
         return 100.0 * self.cells_unscoreable / self.cells_seen if self.cells_seen else 0.0
 
 
-def run_lane(db_url: str, label: str, *, bad_nic_max: int = 5) -> LaneResult:
+def lane_span(db_url: str) -> tuple[datetime, datetime] | None:
+    """Wall-clock span of a lane's NIC-bearing reports."""
     engine = create_engine(db_url)
     with Session(engine) as s:
-        positions = list(s.scalars(select(Position).where(Position.nic.is_not(None))))
+        lo = s.scalar(select(func.min(Position.ts)).where(Position.nic.is_not(None)))
+        hi = s.scalar(select(func.max(Position.ts)).where(Position.nic.is_not(None)))
+    return (utc_naive(lo), utc_naive(hi)) if lo and hi else None
+
+
+def run_lane(
+    db_url: str,
+    label: str,
+    *,
+    bad_nic_max: int = 5,
+    window: tuple[datetime, datetime] | None = None,
+) -> LaneResult:
+    engine = create_engine(db_url)
+    with Session(engine) as s:
+        q = select(Position).where(Position.nic.is_not(None))
+        if window is not None:
+            q = q.where(Position.ts >= window[0], Position.ts <= window[1])
+        positions = list(s.scalars(q))
         reports = len(positions)
         aircraft = len({p.icao24 for p in positions})
         ts = [p.ts for p in positions]
@@ -67,7 +87,7 @@ def run_lane(db_url: str, label: str, *, bad_nic_max: int = 5) -> LaneResult:
             if p.nic is not None and p.nic == 0 and (p.nac_p is None or p.nac_p == 0)
         )
         hist = dict(sorted(Counter(p.nic for p in positions if p.nic is not None).items()))
-        incidents, stats = detect_jamming(s)
+        incidents, stats = detect_jamming(s)  # detector sees the lane's own DB
         top = (
             max((i.evidence or {}).get("degraded_fraction", 0.0) for i in incidents)
             if incidents
@@ -136,10 +156,30 @@ def main() -> None:
     parser.add_argument("--negative", required=True, help="SQLite path for the clean region")
     parser.add_argument("--positive-label", default="Baltic")
     parser.add_argument("--negative-label", default="Singapore")
+    parser.add_argument(
+        "--overlap",
+        action="store_true",
+        help="restrict both lanes to the wall-clock window they were both collecting",
+    )
     args = parser.parse_args()
 
-    pos = run_lane(f"sqlite:///{args.positive}", args.positive_label)
-    neg = run_lane(f"sqlite:///{args.negative}", args.negative_label)
+    pos_url = f"sqlite:///{args.positive}"
+    neg_url = f"sqlite:///{args.negative}"
+    window = None
+    if args.overlap:
+        # The strongest available comparison: same interval, same detector, different sky.
+        spans = [lane_span(pos_url), lane_span(neg_url)]
+        if all(sp is not None for sp in spans):
+            lo = max(sp[0] for sp in spans if sp)
+            hi = min(sp[1] for sp in spans if sp)
+            if lo < hi:
+                window = (lo, hi)
+                print(f"\nrestricted to the overlapping window {lo} -> {hi}")
+            else:
+                print("\nlanes do not overlap in time; reporting full spans")
+
+    pos = run_lane(pos_url, args.positive_label, window=window)
+    neg = run_lane(neg_url, args.negative_label, window=window)
     print()
     print(report(pos, neg))
     print()
