@@ -1,0 +1,73 @@
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="HORUS_", env_file=".env", extra="ignore")
+
+    # Host port 5435: coexists with SENTINEL (5432), ARGUS (5433) and PHAROS (5434).
+    database_url: str = "postgresql+psycopg://horus:horus@localhost:5435/horus"
+
+    http_timeout_seconds: float = 30.0
+
+    # --- Collection: adsb.lol v2 API (free, keyless, readsb aircraft schema) -----------
+    # One point query returns every tracked aircraft within `adsb_radius_nm` of the
+    # centre — including the GNSS integrity fields (nic / nac_p / sil) the flagship
+    # detector needs. Default centre is Singapore; 250 nm is the API's radius cap and
+    # covers the Malacca approaches, the Singapore Strait and the Riau archipelago.
+    adsb_api_url: str = "https://api.adsb.lol/v2"
+    adsb_center_lat: float = 1.35
+    adsb_center_lon: float = 103.82
+    adsb_radius_nm: int = 250
+    adsb_poll_seconds: float = 30.0
+    adsb_source_label: str = "adsb-lol"
+    # Drop stale plots: a position older than this (readsb `seen_pos`) at sample time is
+    # a coasted estimate, not a fresh report.
+    adsb_max_seen_pos_seconds: float = 60.0
+
+    # --- Track building ----------------------------------------------------------------
+    # A new track (flight segment) starts when an aircraft is silent longer than this.
+    track_gap_minutes: float = 15.0
+    track_min_points: int = 10
+    # Fixed-length resample size for the anomaly models' feature/sequence descriptors.
+    track_resample_points: int = 64
+
+    # --- GNSS-interference detector (the flagship) --------------------------------------
+    # NIC (Navigation Integrity Category) is broadcast by the aircraft itself and collapses
+    # when its own GNSS solution degrades — the well-established jamming proxy (GPSJam-style).
+    # Healthy en-route traffic reports NIC >= 7; NIC <= gnss_bad_nic_max counts as degraded.
+    gnss_good_nic_min: int = 7
+    gnss_bad_nic_max: int = 5
+    # Spatio-temporal aggregation: fraction of degraded aircraft per grid cell per window.
+    gnss_cell_deg: float = 0.5
+    gnss_window_minutes: float = 10.0
+    # Cells observing fewer aircraft than this are unscoreable (small-sample honesty),
+    # and an incident needs at least this fraction of them degraded.
+    gnss_min_aircraft: int = 4
+    gnss_bad_fraction_threshold: float = 0.5
+
+    # --- Dark-aircraft (transponder gap) detector ---------------------------------------
+    # The coverage confound is *worse* than AIS: low-altitude traffic drops out of
+    # terrestrial ADS-B reception routinely, so gaps only count while the aircraft was
+    # last seen at/above the altitude floor, and must reappear displaced.
+    gap_min_minutes: float = 10.0
+    gap_min_displacement_km: float = 50.0
+    gap_min_altitude_ft: float = 10_000.0
+
+    # --- Spoof / kinematic-impossibility detector ---------------------------------------
+    # Faster than anything in civil traffic; an implied speed above this between fixes
+    # means the fixes can't both be real (teleporting identity / bad data / spoof).
+    spoof_max_speed_kt: float = 1_400.0
+
+    # --- API hardening for public deployment (safe local-dev defaults) ------------------
+    api_allowed_origins: str = ""
+    api_max_request_chars: int = 100_000
+    api_rate_limit_requests: int = 30
+    api_rate_limit_window_seconds: float = 60.0
+    api_max_concurrent_inference: int = 2
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
