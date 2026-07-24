@@ -35,9 +35,9 @@ Honest status ledger — ✅ built & gated, 🔨 in progress, ⬜ planned.
 | V2 | Region-parameterised collection, so a second lane over a different part of the world runs through the same code path | ✅ |
 | V3 | Two-channel hard-loss tier (NIC 0 corroborated by NACp 0) — measured over real interference, degradation is near-binary rather than gradual | ✅ |
 | V4 | Multi-resolution scoring — sky too sparse for a fine cell falls through to a coarser one; unscoreable 83.0% → 23.7% with no new false positives | ✅ |
-| V5 | Positive/negative control evaluation — the same detector over a known-interference sky and a clean one, identical parameters | 🔨 |
+| V5 | Positive/negative control evaluation — the same detector over a known-interference sky and a clean one, identical parameters | ✅ 15 incidents vs 0, simultaneous windows |
 | V6 | Multi-day Singapore window: diurnal unscoreable curve, per-detector false-positive rate | ⬜ needs wall-clock |
-| V7 | Decide the flagship anomaly model on real tracks (synthetic has linear PCA beating the GRU — a caricature result that only real pattern-of-life can settle) | ⬜ |
+| V7 | Decide the flagship anomaly model on real tracks | ✅ Isolation Forest eliminated (separation 1.21); GRU retained over PCA on separation 4.43 vs 3.99; the synthetic negative does not reproduce |
 | V8 | Witness/coverage model for the transponder-gap detector (the maritime sibling's approach, transplanted) | ⬜ |
 | V9 | Incremental live processing, so the dashboard is current rather than batch-stale | ⬜ |
 | V10 | Live dashboard: interference heatmap with *unscoreable* rendered as a first-class state, NIC sparklines, collector freshness in the masthead | ⬜ |

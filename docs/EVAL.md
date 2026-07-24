@@ -61,6 +61,61 @@ python -m scripts.eval_control \
 Interference is not static — a future run over the same box may find a clean sky, which is
 a property of the world rather than a regression in the detector.
 
+## Flagship anomaly model, decided on real tracks (2026-07-24)
+
+The synthetic gold set could not settle this and said so: there, two perfectly circular
+injected orbits are a linearly-separable caricature of "anomaly" and **linear PCA beat the
+GRU** (AUC 1.00 vs 0.976). That negative is recorded below and was never explained away —
+it was left open until real pattern-of-life data existed to decide it.
+
+571 real Singapore tracks (523 aircraft) now exist, with 100 real Baltic tracks as an
+unseen-region transfer set. Real tracks carry **no anomaly labels**, so there is no AUC to
+compute here and none is claimed. Three things *are* measurable without labels, over 5 seeds:
+
+| Model | Rank stability (Spearman) | Top-10 overlap | Separation (p90/median) | Transfer stability |
+|---|---:|---:|---:|---:|
+| GRU sequence autoencoder | 0.9818 | 0.89 | **4.43** | 0.9017 |
+| Isolation Forest | 0.9721 | 0.62 | **1.21** | 0.9718 |
+| linear PCA | 1.0000 | 1.00 | 3.99 | 1.0000 |
+
+**Isolation Forest is eliminated.** A separation of 1.21 means its top-decile score is
+barely distinguishable from its median — it ranks tracks but cannot discriminate between
+them, and its top-10 set reshuffles across seeds (overlap 0.62). Neither its stability nor
+its transfer number rescues a model that does not separate.
+
+**The synthetic negative does not reproduce.** On real tracks the GRU separates outliers
+further than PCA (4.43 vs 3.99) rather than losing to it. The two rank tracks similarly
+(Spearman 0.884), so this is a modest edge, not a rout.
+
+**PCA's perfect stability is determinism, not quality.** It has no random seed, so 1.0000
+and an overlap of 1.00 are properties of the algorithm. Read against separation, PCA remains
+a genuinely competitive and far cheaper baseline — it is retained as the reference, not
+dismissed.
+
+**Verdict:** the GRU is retained as the flagship on separation and on the interpretability
+check below, with PCA as a close, cheap alternative and Isolation Forest dropped. This is a
+narrower claim than "the GRU is best": stability, transfer and separation are *necessary*
+conditions for trusting a ranking, not sufficient ones.
+
+### Interpretability spot-check (illustrative, not evidence)
+
+The GRU's second-ranked anomaly over Singapore was `9MMFA`, a **P28A** — a Piper PA-28
+single-engine piston — in a corpus otherwise composed of airliners (A20N, B763, A333, B77W),
+having covered 40.7 km where the others covered 200–580 km. A light general-aviation
+aircraft pottering among long-haul jets genuinely is the anomalous pattern of life in that
+sky, and the model surfaced it with no labels and no type information — it sees only
+translation-invariant per-step shape.
+
+This is **one anecdote and is treated as one.** It shows the ranking is not arbitrary; it
+does not establish precision. A blinded multi-track review is the honest version of this
+check and is not yet done.
+
+Reproduce:
+
+```bash
+python -m scripts.benchmark_anomaly --train data/sg-live.db --transfer data/baltic-control.db
+```
+
 ## Multi-resolution scoring — the unscoreable-cell problem
 
 The first Singapore window's dominant limitation was that **83% of cells held too few
