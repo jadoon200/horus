@@ -62,7 +62,9 @@ app.add_middleware(
 )
 
 _rate_limiter = RateLimiter(
-    settings.api_rate_limit_requests, settings.api_rate_limit_window_seconds, False
+    settings.api_rate_limit_requests,
+    settings.api_rate_limit_window_seconds,
+    settings.api_trust_forwarded_header,
 )
 
 
@@ -120,6 +122,9 @@ def stats(db: Session = Depends(get_db)) -> dict[str, Any]:
         "incidents_by_detector": by_detector,
         "newest_report": utc_naive(newest).isoformat() if newest else None,
         "data_age_seconds": age_seconds,
+        # The UI shows a snapshot banner in demo mode instead of a staleness warning: a baked
+        # seed is honestly a snapshot, not a dead live feed.
+        "demo_mode": get_settings().demo_mode,
     }
 
 
@@ -283,7 +288,10 @@ def gnss_coverage(
     map — and the dashboard renders it as its own state rather than as "clear". A map that
     colours unscoreable sky is lying about its own coverage.
     """
-    since = datetime.now(UTC) - timedelta(hours=hours)
+    # A baked demo has no rolling window — its data sits at a fixed past time, so a
+    # "last N hours" filter would return an empty map. In demo mode the whole snapshot is
+    # shown and the UI labels it a snapshot.
+    since = None if get_settings().demo_mode else datetime.now(UTC) - timedelta(hours=hours)
     cells = coverage_grid(db, region, since=since)
 
     # The grid is cell-WINDOWS (space x time), so over a six-hour request the same patch of

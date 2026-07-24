@@ -15,6 +15,7 @@ export interface Stats {
   tracks: number
   incidents: number
   incidents_by_detector: Record<string, number>
+  demo_mode: boolean
   newest_report: string | null
   /** Age of the newest report. Drives the staleness banner — a dashboard that looks live
    *  while the collector is dead is worse than one that admits it. */

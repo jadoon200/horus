@@ -282,3 +282,5 @@ main { padding: 18px 22px 40px; max-width: 1400px; margin: 0 auto; }
   font-size: 12.5px;
   margin-bottom: 10px;
 }
+
+.status-pill.snapshot { color: var(--amber); border-color: rgba(251,191,36,0.4); }

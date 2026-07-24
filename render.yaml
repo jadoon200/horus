@@ -1,0 +1,24 @@
+# Render blueprint — one free web service for the whole app (read-only API + dashboard).
+# Deploy: push to GitHub, then New → Blueprint on https://render.com and point it here.
+# The free plan spins the service down after ~15 min idle and cold-starts on the next hit
+# (~30-60s); fine for a public demo. Render injects $PORT and provides TLS + the URL.
+# .github/workflows/keep-alive.yml pings /health once the RENDER_URL repo variable is set.
+services:
+  - type: web
+    name: horus
+    runtime: docker
+    dockerfilePath: ./Dockerfile.web
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # The demo ships as a baked SYNTHETIC seed — no managed DB, no real aircraft identities.
+      - key: HORUS_DATABASE_URL
+        value: sqlite:////app/data/demo.db
+      # A baked snapshot has no rolling window; demo mode shows the whole snapshot and the
+      # UI labels it a snapshot rather than warning that a live feed has gone stale.
+      - key: HORUS_DEMO_MODE
+        value: "true"
+      # Render terminates TLS and sets X-Forwarded-For, so rate-limit per real client IP.
+      - key: HORUS_API_TRUST_FORWARDED_HEADER
+        value: "true"
