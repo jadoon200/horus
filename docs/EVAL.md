@@ -24,8 +24,8 @@ density, time of day and detector configuration are held constant.
 | Distinct aircraft | 159 | 39 |
 | Reports degraded (NIC ≤ 5) | 392 (15.0%) | 1 (0.2%) |
 | Reports in hard loss (NIC 0 **and** NACp 0) | 322 | 0 |
-| Cells observed | 359 | 167 |
-| Cells unscoreable | 91 (25.3%) | 44 (26.3%) |
+| Cells observed | 359 | 65 |
+| Cells unscoreable | 91 (25.3%) | 29 (44.6%) |
 | **Incidents raised** | **15** | **0** |
 | Highest cell degraded-fraction | 1.00 | 0.00 |
 
@@ -34,8 +34,15 @@ NIC distribution, Baltic: `{0: 340, 1: 1, 2: 2, 3: 26, 4: 4, 5: 19, 6: 44, 7: 86
 
 **What this establishes.** The detector separates the two skies cleanly under identical
 settings, with the strongest Baltic cells reaching 1.00 (every observed aircraft in the
-cell degraded). The unscoreable fractions are within a point of each other, so the contrast
-is not an artefact of one lane being better covered than the other.
+cell degraded). Singapore's higher unscoreable share (44.6% vs 25.3%) reflects its ~5x
+thinner traffic in the window; the contrast in *incidents* survives it, because the cells
+that do qualify are judged under the same rule on both sides.
+
+*(Correction: this table's Singapore cell counts were first published as 167 observed /
+44 unscoreable. Those figures were computed over the lane's whole database rather than the
+overlap window — the detector run was not bounded by the same interval as the report
+statistics. The evaluation script now bounds both to the identical window; the restated
+figures are 65 / 29, and the incident counts were unaffected.)*
 
 **The negative control's single degraded report is the most informative number here.**
 Singapore recorded exactly one NIC-0 report in the window and the detector raised **zero**

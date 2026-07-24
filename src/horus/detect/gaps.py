@@ -50,7 +50,17 @@ def _could_have_left_coverage(
         (lon - s.adsb_center_lon) * 60.0 * math.cos(math.radians((lat + s.adsb_center_lat) / 2))
     )
     from_centre = math.hypot(dlat_nm, dlon_nm)
-    to_boundary = max(0.0, s.adsb_radius_nm - from_centre)
+    # The configured circle is Singapore's by default, but region-parameterised collection
+    # (V2) can populate the database from anywhere. If the position sits outside the
+    # configured circle, this circle is demonstrably not the one that collected the data, so
+    # its boundary math is inapplicable — fail OPEN (keep the call for human review) rather
+    # than suppress. Suppressing here silently dropped every dark-aircraft call over any
+    # non-default region, because `to_boundary` clamps to 0 and the aircraft is always
+    # judged able to have left. A per-region collection boundary is the proper long-term
+    # fix; until then, only suppress where the config boundary provably applies.
+    if from_centre > s.adsb_radius_nm:
+        return False
+    to_boundary = s.adsb_radius_nm - from_centre
     # Out and back at its own cruise speed, in minutes.
     round_trip_minutes = 2.0 * (to_boundary / speed) * 60.0
     return gap_minutes >= round_trip_minutes

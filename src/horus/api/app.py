@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +28,9 @@ from horus.config import get_settings
 from horus.db.base import get_session_factory, init_sqlite_schema
 from horus.db.models import Aircraft, Incident, Position, Track
 from horus.detect.ensemble import air_picture
+from horus.detect.jamming import coverage_grid
 from horus.geoint import to_evidence
+from horus.timeutil import utc_naive
 from horus.zones import all_zones
 
 __version__ = "0.1.0"
@@ -100,12 +103,23 @@ def stats(db: Session = Depends(get_db)) -> dict[str, Any]:
         d: db.scalar(select(func.count()).select_from(Incident).where(Incident.detector == d)) or 0
         for d in detectors
     }
+    # Collection freshness: a dashboard that looks live while the collector is dead is
+    # worse than one that admits it. The age of the newest report is served so the UI can
+    # show staleness instead of quietly rendering old sky as current.
+    newest = db.scalar(select(func.max(Position.ts)))
+    age_seconds = (
+        (datetime.now(UTC) - utc_naive(newest).replace(tzinfo=UTC)).total_seconds()
+        if newest
+        else None
+    )
     return {
         "aircraft": _count(Aircraft),
         "positions": _count(Position),
         "tracks": _count(Track),
         "incidents": _count(Incident),
         "incidents_by_detector": by_detector,
+        "newest_report": utc_naive(newest).isoformat() if newest else None,
+        "data_age_seconds": age_seconds,
     }
 
 
@@ -254,6 +268,73 @@ def incident_detail(incident_id: str, db: Session = Depends(get_db)) -> dict[str
 def get_air_picture(db: Session = Depends(get_db), region: str | None = None) -> dict[str, Any]:
     """The composite: per-aircraft rollups (riskiest first) + area-level GNSS incidents."""
     return air_picture(db, region)
+
+
+@app.get("/gnss-coverage")
+def gnss_coverage(
+    db: Session = Depends(get_db),
+    region: str | None = None,
+    hours: float = Query(6.0, gt=0, le=720),
+) -> dict[str, Any]:
+    """The scoreability map: where the sky could be judged, and where it could not.
+
+    Three states, not two. `scoreable=false` is a positive statement that too few aircraft
+    were observed to judge that patch — at Singapore traffic densities it is most of the
+    map — and the dashboard renders it as its own state rather than as "clear". A map that
+    colours unscoreable sky is lying about its own coverage.
+    """
+    since = datetime.now(UTC) - timedelta(hours=hours)
+    cells = coverage_grid(db, region, since=since)
+
+    # The grid is cell-WINDOWS (space x time), so over a six-hour request the same patch of
+    # sky appears once per ten-minute window. A map has no time axis, so those must be
+    # collapsed to one entry per location before drawing — stacking them just accumulates
+    # opacity until the whole map reads as solid colour, which is what happened the first
+    # time this was rendered.
+    #
+    # Collapsing rule: a location is scoreable if ANY window could judge it, and its
+    # reported fraction is the WORST one observed. That is the honest summary for a watch
+    # display — "at some point in this window, this fraction of aircraft here were
+    # degraded" — and it never lets a quiet later window erase an earlier event.
+    merged: dict[tuple[float, float, float], dict[str, Any]] = {}
+    for c in cells:
+        key = (c.lat, c.lon, c.cell_deg)
+        prev = merged.get(key)
+        if prev is None:
+            merged[key] = {
+                "lat": c.lat,
+                "lon": c.lon,
+                "cell_deg": c.cell_deg,
+                "level": c.level,
+                "aircraft_observed": c.aircraft_observed,
+                "scoreable": c.scoreable,
+                "degraded_fraction": c.degraded_fraction,
+                "hard_loss": c.hard_loss,
+                "windows": 1,
+            }
+            continue
+        prev["windows"] = int(prev["windows"]) + 1
+        prev["aircraft_observed"] = max(int(prev["aircraft_observed"]), c.aircraft_observed)
+        prev["hard_loss"] = max(int(prev["hard_loss"]), c.hard_loss)
+        if c.scoreable:
+            best = prev["degraded_fraction"]
+            prev["scoreable"] = True
+            prev["degraded_fraction"] = (
+                c.degraded_fraction
+                if best is None
+                else max(float(best), c.degraded_fraction or 0.0)
+            )
+
+    out = list(merged.values())
+    return {
+        "window_hours": hours,
+        "cell_windows": len(cells),
+        "cells_total": len(out),
+        "cells_scoreable": sum(1 for c in out if c["scoreable"]),
+        "cells_unscoreable": sum(1 for c in out if not c["scoreable"]),
+        "min_aircraft": get_settings().gnss_min_aircraft,
+        "cells": out,
+    }
 
 
 @app.get("/geoint/evidence")

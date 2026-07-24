@@ -15,6 +15,7 @@ area signature. The lone-dip confounder is handled by the fraction + minimum tog
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -62,89 +63,138 @@ class JammingRunStats:
     incidents: int = 0
 
 
-def detect_jamming(
-    session: Session, region: str | None = None, *, since: datetime | None = None
-) -> tuple[list[Incident], JammingRunStats]:
-    """Area-level GNSS-interference incidents.
+def align_to_window(ts: datetime, settings: Settings) -> datetime:
+    """Snap a timestamp DOWN to the jamming bucket boundary containing it.
 
-    `since` restricts scoring to reports at or after that time — the incremental lane's
-    handle. A cell-window whose reports are entirely in the past cannot change, so
-    re-scoring it would only reproduce what is already stored. Note this is a filter on the
-    *input reports*, so a window straddling the boundary is scored on its visible part
-    only; callers pass a `since` comfortably older than any window they care about.
+    Buckets are epoch-anchored, so an arbitrary `since` almost always falls mid-bucket.
+    An incremental refresh must align its boundary here: a bucket straddling an unaligned
+    `since` keeps its stored incident (ts_start before the boundary, so the delete misses
+    it) while the scoped detector regenerates the same bucket id from the partial evidence
+    — a primary-key collision, reproduced before this helper existed. Aligned, every
+    bucket the detector can regenerate is also fully covered by the delete, and no bucket
+    is ever scored on partial evidence.
     """
-    s = get_settings()
+    window = timedelta(minutes=settings.gnss_window_minutes)
+    return _EPOCH + ((ts - _EPOCH) // window) * window
+
+
+def _load_positions(
+    session: Session,
+    region: str | None,
+    since: datetime | None,
+    until: datetime | None = None,
+) -> list[Position]:
     q = select(Position).where(Position.nic.is_not(None), Position.on_ground.is_(False))
     if region:
         q = q.where(Position.region == region)
     if since is not None:
         q = q.where(Position.ts >= since)
+    if until is not None:
+        q = q.where(Position.ts <= until)
+    return list(session.scalars(q))
 
+
+def _fine_key(p: Position, cell_deg: float, window: timedelta) -> tuple[int, int, int]:
+    ts = utc_naive(p.ts)
+    return (
+        int(p.lat // cell_deg),
+        int(p.lon // cell_deg),
+        int((ts - _EPOCH) // window),
+    )
+
+
+def _accumulate(cw: _CellWindow, p: Position) -> None:
+    ts = utc_naive(p.ts)
+    assert p.nic is not None
+    prev = cw.worst_nic.get(p.icao24)
+    if prev is None or p.nic < prev:
+        cw.worst_nic[p.icao24] = p.nic
+    if p.nac_p is not None:
+        prev_nac = cw.worst_nac_p.get(p.icao24)
+        if prev_nac is None or p.nac_p < prev_nac:
+            cw.worst_nac_p[p.icao24] = p.nac_p
+    cw.ts_min = ts if cw.ts_min is None or ts < cw.ts_min else cw.ts_min
+    cw.ts_max = ts if cw.ts_max is None or ts > cw.ts_max else cw.ts_max
+    if cw.region is None:
+        cw.region = p.region
+
+
+def _aggregate_levels(
+    positions: list[Position], s: Settings
+) -> Iterator[tuple[int, float, tuple[int, int, int], _CellWindow, bool]]:
+    """Yield (level, cell_deg, key, cell, scoreable) finest-first, then the unscoreable sky.
+
+    The single source of truth for multi-resolution scoring: the detector and the coverage
+    map both consume this, so the map can never disagree with the incidents drawn on it.
+
+    A fixed cell size forces one choice for the whole map, and over real traffic that choice
+    is wrong somewhere — at 0.5° over Singapore 83% of cells held too few aircraft. So each
+    resolution is tried in turn and a cell is accepted only where it meets the aircraft
+    minimum; sky that fails falls through to the next, coarser level. Whatever never
+    qualifies at any resolution is yielded last with `scoreable=False` rather than dropped.
+    """
     window = timedelta(minutes=s.gnss_window_minutes)
-    positions = list(session.scalars(q))
-
-    # Multi-resolution scoring. A fixed cell size forces one choice for the whole map, and
-    # over real traffic that choice is nearly always wrong somewhere: at 0.5° over Singapore
-    # 83% of cells held too few aircraft to score. Instead, aggregate at each resolution in
-    # turn (finest first) and accept a cell only where it meets the aircraft minimum; any
-    # sky still unscoreable falls through to the next, coarser level. Dense airways keep
-    # tight localization, sparse sky still gets an answer, and the resolution actually used
-    # is recorded on the incident rather than implied.
     levels = [s.gnss_cell_deg * (2**k) for k in range(s.gnss_coarsen_levels + 1)]
-    incidents: list[Incident] = []
-    stats = JammingRunStats()
-    claimed: set[tuple[int, int, int]] = set()  # finest-level keys already answered
+    claimed: set[tuple[int, int, int]] = set()
 
     for level, cell_deg in enumerate(levels):
         cells: dict[tuple[int, int, int], _CellWindow] = {}
-        fine_members: dict[tuple[int, int, int], set[tuple[int, int, int]]] = {}
+        members: dict[tuple[int, int, int], set[tuple[int, int, int]]] = {}
         for p in positions:
-            ts = utc_naive(p.ts)
-            bucket = int((ts - _EPOCH) // window)
-            fine_key = (
-                int(p.lat // s.gnss_cell_deg),
-                int(p.lon // s.gnss_cell_deg),
-                bucket,
-            )
-            if fine_key in claimed:
+            fine = _fine_key(p, s.gnss_cell_deg, window)
+            if fine in claimed:
                 continue  # already answered at a finer resolution
-            key = (int(p.lat // cell_deg), int(p.lon // cell_deg), bucket)
-            cw = cells.setdefault(key, _CellWindow())
-            fine_members.setdefault(key, set()).add(fine_key)
-            assert p.nic is not None
-            prev = cw.worst_nic.get(p.icao24)
-            if prev is None or p.nic < prev:
-                cw.worst_nic[p.icao24] = p.nic
-            if p.nac_p is not None:
-                prev_nac = cw.worst_nac_p.get(p.icao24)
-                if prev_nac is None or p.nac_p < prev_nac:
-                    cw.worst_nac_p[p.icao24] = p.nac_p
-            cw.ts_min = ts if cw.ts_min is None or ts < cw.ts_min else cw.ts_min
-            cw.ts_max = ts if cw.ts_max is None or ts > cw.ts_max else cw.ts_max
-            if cw.region is None:
-                cw.region = p.region
+            key = (int(p.lat // cell_deg), int(p.lon // cell_deg), fine[2])
+            _accumulate(cells.setdefault(key, _CellWindow()), p)
+            members.setdefault(key, set()).add(fine)
 
-        if level == 0:
-            stats.cells_seen = len(cells)
-
-        for (ci, cj, wk), cw in sorted(cells.items()):
-            total = len(cw.worst_nic)
-            if total < s.gnss_min_aircraft:
+        for key, cw in sorted(cells.items()):
+            if len(cw.worst_nic) < s.gnss_min_aircraft:
                 continue  # try again, coarser
-            # This patch of sky is answered; don't re-aggregate it at a coarser level.
-            claimed |= fine_members.get((ci, cj, wk), set())
-            _score_cell(incidents, s, cw, ci, cj, wk, cell_deg=cell_deg, level=level, region=region)
+            claimed |= members.get(key, set())
+            yield level, cell_deg, key, cw, True
 
-    # Whatever never met the minimum at any resolution stays honestly unscored.
-    fine_keys = {
-        (
-            int(p.lat // s.gnss_cell_deg),
-            int(p.lon // s.gnss_cell_deg),
-            int((utc_naive(p.ts) - _EPOCH) // window),
-        )
-        for p in positions
-    }
-    stats.cells_unscoreable = len(fine_keys - claimed)
+    # Sky that never met the minimum at any resolution, reported at the finest granularity.
+    leftover: dict[tuple[int, int, int], _CellWindow] = {}
+    for p in positions:
+        fine = _fine_key(p, s.gnss_cell_deg, window)
+        if fine not in claimed:
+            _accumulate(leftover.setdefault(fine, _CellWindow()), p)
+    for key, cw in sorted(leftover.items()):
+        yield 0, s.gnss_cell_deg, key, cw, False
+
+
+def detect_jamming(
+    session: Session,
+    region: str | None = None,
+    *,
+    since: datetime | None = None,
+    until: datetime | None = None,
+) -> tuple[list[Incident], JammingRunStats]:
+    """Area-level GNSS-interference incidents.
+
+    `since`/`until` restrict scoring to reports inside that interval. `since` is the
+    incremental lane's handle (a cell-window whose reports are entirely in the past cannot
+    change); `until` exists for evaluations that must describe a bounded interval — a
+    controlled comparison whose statistics cover one window but whose incidents cover the
+    whole database is describing two different experiments in one table. Both are filters
+    on the *input reports*; callers who care about bucket boundaries align them (see
+    `align_to_window`).
+    """
+    s = get_settings()
+    positions = _load_positions(session, region, since, until)
+
+    incidents: list[Incident] = []
+    stats = JammingRunStats()
+    for level, cell_deg, key, cw, scoreable in _aggregate_levels(positions, s):
+        if not scoreable:
+            stats.cells_unscoreable += 1
+            continue
+        ci, cj, wk = key
+        _score_cell(incidents, s, cw, ci, cj, wk, cell_deg=cell_deg, level=level, region=region)
+
+    window = timedelta(minutes=s.gnss_window_minutes)
+    stats.cells_seen = len({_fine_key(p, s.gnss_cell_deg, window) for p in positions})
     stats.incidents = len(incidents)
     log.info(
         "detect_jamming",
@@ -153,6 +203,67 @@ def detect_jamming(
         incidents=stats.incidents,
     )
     return incidents, stats
+
+
+@dataclass
+class CoverageCell:
+    """One patch of sky and what could honestly be said about it.
+
+    The dashboard's three states come from here. `scoreable=False` is not an absence of
+    data to be left blank or, worse, drawn as "clear" — it is a positive statement that too
+    few aircraft were observed to judge, and it is the majority of the map at Singapore
+    traffic densities. A map that colours unscoreable sky is lying about its own coverage.
+    """
+
+    lat: float
+    lon: float
+    cell_deg: float
+    level: int
+    aircraft_observed: int
+    scoreable: bool
+    degraded_fraction: float | None  # None exactly when not scoreable
+    hard_loss: int
+    ts_start: datetime | None
+    ts_end: datetime | None
+
+
+def coverage_grid(
+    session: Session, region: str | None = None, *, since: datetime | None = None
+) -> list[CoverageCell]:
+    """The scoreability map behind the incidents.
+
+    Shares `_aggregate_levels` with the detector rather than recomputing the grid, so what
+    the map draws is exactly what the detector decided — a dashboard that disagrees with
+    the evaluation is worse than no dashboard.
+    """
+    s = get_settings()
+    positions = _load_positions(session, region, since)
+    cells: list[CoverageCell] = []
+    for level, cell_deg, key, cw, scoreable in _aggregate_levels(positions, s):
+        ci, cj, _wk = key
+        total = len(cw.worst_nic)
+        degraded = {a: n for a, n in cw.worst_nic.items() if n <= s.gnss_bad_nic_max}
+        hard = {
+            a
+            for a, n in degraded.items()
+            if n <= s.gnss_hard_loss_nic
+            and cw.worst_nac_p.get(a, s.gnss_hard_loss_nac_p) <= s.gnss_hard_loss_nac_p
+        }
+        cells.append(
+            CoverageCell(
+                lat=(ci + 0.5) * cell_deg,
+                lon=(cj + 0.5) * cell_deg,
+                cell_deg=cell_deg,
+                level=level,
+                aircraft_observed=total,
+                scoreable=scoreable,
+                degraded_fraction=(len(degraded) / total) if scoreable else None,
+                hard_loss=len(hard),
+                ts_start=cw.ts_min,
+                ts_end=cw.ts_max,
+            )
+        )
+    return cells
 
 
 def _score_cell(

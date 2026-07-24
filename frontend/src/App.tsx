@@ -24,6 +24,26 @@ function StatusPill() {
   return <span className="status-pill ok">● API v{data.version}</span>
 }
 
+/** How old the newest report is. Shown always, not only when stale: a viewer should never
+ *  have to assume the sky on screen is current — the age says so explicitly. */
+function Freshness() {
+  const { data } = useQuery({
+    queryKey: ['stats'],
+    queryFn: api.stats,
+    refetchInterval: 30_000,
+  })
+  if (!data || data.data_age_seconds == null) return null
+  const mins = data.data_age_seconds / 60
+  const stale = mins > 5
+  const label =
+    mins < 1 ? 'live' : mins < 90 ? `${mins.toFixed(0)} min old` : `${(mins / 60).toFixed(1)} h old`
+  return (
+    <span className={`status-pill${stale ? '' : ' ok'}`} title={`newest report ${data.newest_report}`}>
+      {stale ? '◐' : '●'} data {label}
+    </span>
+  )
+}
+
 function Shell() {
   const [tab, setTab] = useState<Tab>('picture')
   return (
@@ -45,6 +65,7 @@ function Shell() {
           ))}
         </nav>
         <div className="spacer" />
+        <Freshness />
         <StatusPill />
       </header>
       <main>

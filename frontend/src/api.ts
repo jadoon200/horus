@@ -15,6 +15,37 @@ export interface Stats {
   tracks: number
   incidents: number
   incidents_by_detector: Record<string, number>
+  newest_report: string | null
+  /** Age of the newest report. Drives the staleness banner — a dashboard that looks live
+   *  while the collector is dead is worse than one that admits it. */
+  data_age_seconds: number | null
+}
+
+/** One patch of sky and what could honestly be said about it. */
+export interface CoverageCell {
+  lat: number
+  lon: number
+  cell_deg: number
+  level: number
+  aircraft_observed: number
+  scoreable: boolean
+  /** null exactly when the cell is unscoreable — never 0, which would read as "clear". */
+  degraded_fraction: number | null
+  hard_loss: number
+  /** How many time windows were collapsed into this map cell. The fraction shown is the
+   *  WORST across them, so an event is never hidden by a later quiet window — which also
+   *  means the colour is not the current state. */
+  windows: number
+}
+
+export interface Coverage {
+  window_hours: number
+  cell_windows: number
+  cells_total: number
+  cells_scoreable: number
+  cells_unscoreable: number
+  min_aircraft: number
+  cells: CoverageCell[]
 }
 
 export interface Incident {
@@ -97,6 +128,7 @@ export const api = {
     get<Incident[]>(`/incidents${detector ? `?detector=${detector}` : ''}`),
   airPicture: () => get<AirPicture>('/air-picture'),
   zones: () => get<FeatureCollection>('/zones'),
+  coverage: (hours = 6) => get<Coverage>(`/gnss-coverage?hours=${hours}`),
   tracks: () => get<FeatureCollection>('/tracks'),
 }
 

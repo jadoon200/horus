@@ -1,7 +1,25 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { CircleMarker, MapContainer, Polygon, Polyline, TileLayer, Tooltip } from 'react-leaflet'
-import { api, reliabilityMeta, type AircraftRollup, type AreaIncident } from '../api'
+import { CircleMarker, MapContainer, Polygon, Polyline, Rectangle, TileLayer, Tooltip } from 'react-leaflet'
+import { api, reliabilityMeta, type AircraftRollup, type AreaIncident, type CoverageCell } from '../api'
+
+/** Three states, never two. An unscoreable cell is drawn as hatched grey — visibly
+ *  "no data", never as clear sky, because most of the map is unscoreable at Singapore
+ *  traffic densities and hiding that would misrepresent the coverage. */
+function cellStyle(c: CoverageCell) {
+  if (!c.scoreable) {
+    // Visibly "no data": hatched grey outline, barely filled. It must read as absence,
+    // never as clear sky — and it is most of the map, so a heavy fill would swamp
+    // everything the map is actually for.
+    return { color: '#64748b', weight: 0.5, fillColor: '#334155', fillOpacity: 0.1, dashArray: '2 3' }
+  }
+  const f = c.degraded_fraction ?? 0
+  if (f >= 0.5) return { color: '#f87171', weight: 1.2, fillColor: '#f87171', fillOpacity: 0.5 }
+  if (f > 0) return { color: '#fbbf24', weight: 1, fillColor: '#fbbf24', fillOpacity: 0.3 }
+  // "Clear" is the overwhelmingly common, uninteresting case — a hairline only. Filling it
+  // buried the tracks and the degraded cells under a wash of green.
+  return { color: '#4ade80', weight: 0.4, fillColor: '#4ade80', fillOpacity: 0.02 }
+}
 
 function riskTone(risk: number): string {
   return risk >= 0.8 ? 'high' : risk >= 0.6 ? 'mid' : 'low'
@@ -75,6 +93,8 @@ function AreaCard({ a }: { a: AreaIncident }) {
 
 export default function AirPicture() {
   const picture = useQuery({ queryKey: ['air-picture'], queryFn: api.airPicture })
+  const coverage = useQuery({ queryKey: ['coverage'], queryFn: () => api.coverage(6) })
+  const [showCoverage, setShowCoverage] = useState(true)
   const zones = useQuery({ queryKey: ['zones'], queryFn: api.zones })
   const tracks = useQuery({ queryKey: ['tracks'], queryFn: api.tracks })
   const [openId, setOpenId] = useState<string | null>(null)
@@ -91,8 +111,30 @@ export default function AirPicture() {
     [tracks.data],
   )
 
+  const cov = coverage.data
   return (
     <div className="split">
+      <div>
+        <div className="cov-bar">
+          <label className="cov-toggle">
+            <input
+              type="checkbox"
+              checked={showCoverage}
+              onChange={(e) => setShowCoverage(e.target.checked)}
+            />
+            GNSS coverage
+          </label>
+          <span className="key"><i className="sw clear" /> clear</span>
+          <span className="key"><i className="sw part" /> some degraded</span>
+          <span className="key"><i className="sw bad" /> majority degraded</span>
+          <span className="key"><i className="sw none" /> unscoreable</span>
+          {cov && (
+            <span className="cov-count">
+              worst over {cov.window_hours} h · {cov.cells_unscoreable}/{cov.cells_total}{' '}
+              unscoreable — fewer than {cov.min_aircraft} aircraft, so not judged
+            </span>
+          )}
+        </div>
       <div className="map-panel">
         <MapContainer center={[1.25, 103.85]} zoom={8} scrollWheelZoom>
           <TileLayer
@@ -120,6 +162,41 @@ export default function AirPicture() {
               </Polygon>
             )
           })}
+          {showCoverage &&
+            // Coarsest first: a coarse cell spans sky that finer cells also cover, so
+            // drawing it last would paint over the more precise answer beneath it.
+            [...(coverage.data?.cells ?? [])]
+              .sort((a, b) => b.cell_deg - a.cell_deg)
+              .map((c, i) => (
+              <Rectangle
+                key={`cov-${i}`}
+                bounds={[
+                  [c.lat - c.cell_deg / 2, c.lon - c.cell_deg / 2],
+                  [c.lat + c.cell_deg / 2, c.lon + c.cell_deg / 2],
+                ]}
+                pathOptions={cellStyle(c)}
+              >
+                <Tooltip sticky>
+                  {c.scoreable ? (
+                    <>
+                      <b>Worst in window:</b>{' '}
+                      {((c.degraded_fraction ?? 0) * 100).toFixed(0)}% of up to{' '}
+                      {c.aircraft_observed} aircraft degraded
+                      {c.hard_loss > 0 && <> · {c.hard_loss} in hard loss</>}
+                      <br />
+                      cell {c.cell_deg}° · {c.windows} time window
+                      {c.windows === 1 ? '' : 's'} · not the current state
+                    </>
+                  ) : (
+                    <>
+                      <b>Unscoreable</b> — at most {c.aircraft_observed} aircraft seen here
+                      <br />
+                      fewer than the minimum to judge; deliberately not scored
+                    </>
+                  )}
+                </Tooltip>
+              </Rectangle>
+              ))}
           {trackLines.map((t) => (
             <Polyline
               key={t.id}
@@ -145,6 +222,7 @@ export default function AirPicture() {
               ),
           )}
         </MapContainer>
+      </div>
       </div>
       <div>
         <section className="panel">
