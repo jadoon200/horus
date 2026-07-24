@@ -195,3 +195,58 @@ def test_every_detector_id_is_time_scoped() -> None:
                 f"{inc.incident_id} has no time component; it will collide across "
                 "incremental refresh windows"
             )
+
+
+def test_refresh_survives_a_bucket_straddling_its_boundary() -> None:
+    """A jamming bucket straddling `since` must not collide with its stored incident.
+
+    Reproduced before the fix: the stored incident starts before an unaligned `since`
+    (so the delete misses it) while the scoped detector regenerates the same epoch-anchored
+    bucket id from the partial evidence — IntegrityError on commit. `since` is now snapped
+    down to the bucket boundary, which both covers the delete and keeps any re-scored
+    bucket fully visible rather than partially.
+    """
+    from horus.tracks.incremental import refresh_recent_incidents
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    bucket_start = datetime(2026, 7, 23, 12, 0, tzinfo=UTC)
+    with Session(engine) as s:
+        # One bucket [T, T+10): six aircraft, four in hard loss — a firing cell.
+        for k in range(6):
+            icao = f"aa{k:04x}"
+            s.add(Aircraft(icao24=icao))
+            for minute in (1, 4, 8):
+                s.add(
+                    Position(
+                        icao24=icao,
+                        ts=bucket_start + timedelta(minutes=minute),
+                        lat=54.9,
+                        lon=20.5,
+                        alt_baro_ft=35000.0,
+                        nic=0 if k < 4 else 8,
+                        nac_p=0 if k < 4 else 9,
+                        region="baltic",
+                    )
+                )
+        s.commit()
+        settings = Settings(_env_file=None)  # type: ignore[call-arg]
+
+        full = refresh_recent_incidents(
+            s,
+            since=bucket_start.replace(tzinfo=None) - timedelta(days=1),
+            region="baltic",
+            settings=settings,
+        )
+        s.commit()
+        assert full == 1
+
+        # since falls MID-bucket — the straddle. Must re-derive cleanly, not collide.
+        again = refresh_recent_incidents(
+            s,
+            since=bucket_start.replace(tzinfo=None) + timedelta(minutes=5),
+            region="baltic",
+            settings=settings,
+        )
+        s.commit()  # raised IntegrityError before the alignment fix
+        assert again == 1  # same bucket, fully re-derived, not duplicated

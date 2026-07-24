@@ -212,3 +212,48 @@ def test_hard_loss_tier_requires_both_integrity_channels() -> None:
         assert ev["hard_loss_aircraft"] == ["aa0001", "aa0002", "aa0003"]
         # NIC-degraded-but-NACp-healthy aircraft must NOT be promoted to hard loss.
         assert "aa0004" not in ev["hard_loss_aircraft"]
+
+
+def test_jamming_until_bounds_the_scored_interval() -> None:
+    """`until` exists so an evaluation can describe ONE bounded interval.
+
+    A controlled comparison whose report statistics cover an overlap window but whose
+    incidents cover the whole database is describing two different experiments in one
+    table — that inconsistency was live in scripts/eval_control.py before this parameter.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from horus.db.models import Aircraft, Position
+    from horus.detect.jamming import detect_jamming
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    t0 = datetime(2026, 7, 23, 12, 0, tzinfo=UTC)
+    with Session(engine) as s:
+        # Two firing buckets an hour apart; the bound must keep only the first.
+        for start_minute in (0, 60):
+            for k in range(5):
+                icao = f"a{start_minute:02d}{k:03x}"
+                s.add(Aircraft(icao24=icao))
+                for m in (1, 5, 9):
+                    s.add(
+                        Position(
+                            icao24=icao,
+                            ts=t0 + timedelta(minutes=start_minute + m),
+                            lat=54.9,
+                            lon=20.5,
+                            alt_baro_ft=35000.0,
+                            nic=0 if k < 4 else 8,
+                            nac_p=0 if k < 4 else 9,
+                            region="baltic",
+                        )
+                    )
+        s.commit()
+
+        both, _ = detect_jamming(s, "baltic")
+        assert len(both) == 2
+        first_only, _ = detect_jamming(
+            s, "baltic", until=(t0 + timedelta(minutes=30)).replace(tzinfo=None)
+        )
+        assert len(first_only) == 1
+        assert first_only[0].incident_id == min(i.incident_id for i in both)

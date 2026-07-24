@@ -32,7 +32,7 @@ from horus.config import Settings, get_settings
 from horus.db.models import Incident, Position, Track
 from horus.detect.gaps import detect_gaps
 from horus.detect.incursion import detect_incursions
-from horus.detect.jamming import detect_jamming
+from horus.detect.jamming import align_to_window, detect_jamming
 from horus.detect.spoof import detect_spoof
 from horus.logging import get_logger
 from horus.timeutil import utc_naive
@@ -105,7 +105,14 @@ def refresh_recent_incidents(
     Incidents that *start* inside the window are deleted and re-derived. A settled incident
     from before the window is untouched: its inputs are all in the past, so recomputing it
     could only reproduce it or — if the window clipped its evidence — corrupt it.
+
+    `since` is first snapped DOWN to the jamming bucket boundary. Unaligned, a bucket
+    straddling it kept its stored incident (starting before the boundary) while the scoped
+    detector regenerated the same bucket id from partial evidence — a primary-key
+    collision. Alignment widens the refresh by at most one bucket, and re-deriving that
+    bucket from its now-fully-visible evidence is idempotent.
     """
+    since = align_to_window(since, settings)
     del_q = delete(Incident).where(
         Incident.detector.in_(("jamming", "gap", "incursion", "spoof")),
         Incident.ts_start >= since,

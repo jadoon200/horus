@@ -87,7 +87,14 @@ def run_lane(
             if p.nic is not None and p.nic == 0 and (p.nac_p is None or p.nac_p == 0)
         )
         hist = dict(sorted(Counter(p.nic for p in positions if p.nic is not None).items()))
-        incidents, stats = detect_jamming(s)  # detector sees the lane's own DB
+        # The detector must be bounded by the SAME window as every other row of the table:
+        # a comparison whose report statistics cover the overlap but whose incidents cover
+        # the whole database is describing two different experiments in one table.
+        incidents, stats = detect_jamming(
+            s,
+            since=window[0] if window else None,
+            until=window[1] if window else None,
+        )
         top = (
             max((i.evidence or {}).get("degraded_fraction", 0.0) for i in incidents)
             if incidents

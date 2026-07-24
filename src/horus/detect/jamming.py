@@ -63,12 +63,34 @@ class JammingRunStats:
     incidents: int = 0
 
 
-def _load_positions(session: Session, region: str | None, since: datetime | None) -> list[Position]:
+def align_to_window(ts: datetime, settings: Settings) -> datetime:
+    """Snap a timestamp DOWN to the jamming bucket boundary containing it.
+
+    Buckets are epoch-anchored, so an arbitrary `since` almost always falls mid-bucket.
+    An incremental refresh must align its boundary here: a bucket straddling an unaligned
+    `since` keeps its stored incident (ts_start before the boundary, so the delete misses
+    it) while the scoped detector regenerates the same bucket id from the partial evidence
+    — a primary-key collision, reproduced before this helper existed. Aligned, every
+    bucket the detector can regenerate is also fully covered by the delete, and no bucket
+    is ever scored on partial evidence.
+    """
+    window = timedelta(minutes=settings.gnss_window_minutes)
+    return _EPOCH + ((ts - _EPOCH) // window) * window
+
+
+def _load_positions(
+    session: Session,
+    region: str | None,
+    since: datetime | None,
+    until: datetime | None = None,
+) -> list[Position]:
     q = select(Position).where(Position.nic.is_not(None), Position.on_ground.is_(False))
     if region:
         q = q.where(Position.region == region)
     if since is not None:
         q = q.where(Position.ts >= since)
+    if until is not None:
+        q = q.where(Position.ts <= until)
     return list(session.scalars(q))
 
 
@@ -143,18 +165,24 @@ def _aggregate_levels(
 
 
 def detect_jamming(
-    session: Session, region: str | None = None, *, since: datetime | None = None
+    session: Session,
+    region: str | None = None,
+    *,
+    since: datetime | None = None,
+    until: datetime | None = None,
 ) -> tuple[list[Incident], JammingRunStats]:
     """Area-level GNSS-interference incidents.
 
-    `since` restricts scoring to reports at or after that time — the incremental lane's
-    handle. A cell-window whose reports are entirely in the past cannot change, so
-    re-scoring it would only reproduce what is already stored. Note this is a filter on the
-    *input reports*, so a window straddling the boundary is scored on its visible part
-    only; callers pass a `since` comfortably older than any window they care about.
+    `since`/`until` restrict scoring to reports inside that interval. `since` is the
+    incremental lane's handle (a cell-window whose reports are entirely in the past cannot
+    change); `until` exists for evaluations that must describe a bounded interval — a
+    controlled comparison whose statistics cover one window but whose incidents cover the
+    whole database is describing two different experiments in one table. Both are filters
+    on the *input reports*; callers who care about bucket boundaries align them (see
+    `align_to_window`).
     """
     s = get_settings()
-    positions = _load_positions(session, region, since)
+    positions = _load_positions(session, region, since, until)
 
     incidents: list[Incident] = []
     stats = JammingRunStats()
