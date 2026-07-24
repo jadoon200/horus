@@ -156,3 +156,59 @@ def test_incidents_carry_the_data_region_not_the_query_filter() -> None:
         incidents = _detected(s)
         assert incidents
         assert {i.region for i in incidents} == {"synthetic"}
+
+
+def test_hard_loss_tier_requires_both_integrity_channels() -> None:
+    """NIC 0 corroborated by NACp 0 is the sharp signature; NIC alone is the wider band.
+
+    Measured over real interference (Baltic, 2026-07-23): 18 of 20 degraded aircraft sat at
+    exactly NIC 0 and NACp collapsed with them, while healthy traffic never reported NACp
+    below 8. So the hard-loss tier must count only aircraft whose *second* channel agrees.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from horus.db.models import Aircraft, Position
+    from horus.detect.jamming import detect_jamming
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    base = datetime(2026, 7, 23, 12, 0, tzinfo=UTC)
+    with Session(engine) as s:
+        # Six aircraft in one cell: three in total integrity loss (both channels at 0),
+        # two merely degraded on NIC while NACp stays healthy, one clean.
+        spec = [
+            ("aa0001", 0, 0),
+            ("aa0002", 0, 0),
+            ("aa0003", 0, 0),
+            ("aa0004", 4, 9),
+            ("aa0005", 5, 10),
+            ("aa0006", 8, 10),
+        ]
+        for icao, nic, nac in spec:
+            s.add(Aircraft(icao24=icao))
+            for k in range(3):
+                s.add(
+                    Position(
+                        icao24=icao,
+                        ts=base + timedelta(minutes=k),
+                        lat=54.9,
+                        lon=20.5,
+                        alt_baro_ft=35000.0,
+                        nic=nic,
+                        nac_p=nac,
+                        region="baltic",
+                    )
+                )
+        s.commit()
+
+        incidents, _ = detect_jamming(s, "baltic")
+        assert len(incidents) == 1
+        ev = incidents[0].evidence
+        assert ev is not None
+        # Five of six are degraded on NIC, but only the three with NACp agreement are hard loss.
+        assert ev["aircraft_observed"] == 6
+        assert ev["aircraft_degraded"] == 5
+        assert ev["aircraft_hard_loss"] == 3
+        assert ev["hard_loss_aircraft"] == ["aa0001", "aa0002", "aa0003"]
+        # NIC-degraded-but-NACp-healthy aircraft must NOT be promoted to hard loss.
+        assert "aa0004" not in ev["hard_loss_aircraft"]

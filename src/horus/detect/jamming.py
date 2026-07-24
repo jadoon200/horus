@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from horus.config import get_settings
+from horus.config import Settings, get_settings
 from horus.db.models import Incident, Position
 from horus.detect.base import TECH_JAMMING, grade_samples, make_incident
 from horus.logging import get_logger
@@ -42,6 +42,10 @@ class _CellWindow:
     """Observed aircraft → worst NIC inside one grid cell x time window."""
 
     worst_nic: dict[str, int] = field(default_factory=dict)
+    # Second integrity channel, tracked per aircraft alongside NIC. Healthy traffic never
+    # reports NACp 0 (measured), so NIC and NACp collapsing together is a much sharper
+    # signature than either alone.
+    worst_nac_p: dict[str, int] = field(default_factory=dict)
     ts_min: datetime | None = None
     ts_max: datetime | None = None
     # Region of the data that formed this cell, so an unscoped run still attributes the
@@ -67,68 +71,70 @@ def detect_jamming(
         q = q.where(Position.region == region)
 
     window = timedelta(minutes=s.gnss_window_minutes)
-    cell_deg = s.gnss_cell_deg
-    cells: dict[tuple[int, int, int], _CellWindow] = {}
+    positions = list(session.scalars(q))
 
-    # One pass. (This used to scan twice — once to find the corpus minimum timestamp — which
-    # both doubled the I/O and introduced the corpus-dependent bucketing described above.)
-    for p in session.scalars(q):
-        ts = utc_naive(p.ts)
-        key = (
-            int(p.lat // cell_deg),
-            int(p.lon // cell_deg),
-            int((ts - _EPOCH) // window),
-        )
-        cw = cells.setdefault(key, _CellWindow())
-        assert p.nic is not None
-        prev = cw.worst_nic.get(p.icao24)
-        if prev is None or p.nic < prev:
-            cw.worst_nic[p.icao24] = p.nic
-        cw.ts_min = ts if cw.ts_min is None or ts < cw.ts_min else cw.ts_min
-        cw.ts_max = ts if cw.ts_max is None or ts > cw.ts_max else cw.ts_max
-        if cw.region is None:
-            cw.region = p.region
-
-    stats = JammingRunStats(cells_seen=len(cells))
+    # Multi-resolution scoring. A fixed cell size forces one choice for the whole map, and
+    # over real traffic that choice is nearly always wrong somewhere: at 0.5° over Singapore
+    # 83% of cells held too few aircraft to score. Instead, aggregate at each resolution in
+    # turn (finest first) and accept a cell only where it meets the aircraft minimum; any
+    # sky still unscoreable falls through to the next, coarser level. Dense airways keep
+    # tight localization, sparse sky still gets an answer, and the resolution actually used
+    # is recorded on the incident rather than implied.
+    levels = [s.gnss_cell_deg * (2**k) for k in range(s.gnss_coarsen_levels + 1)]
     incidents: list[Incident] = []
-    for (ci, cj, wk), cw in sorted(cells.items()):
-        total = len(cw.worst_nic)
-        if total < s.gnss_min_aircraft:
-            stats.cells_unscoreable += 1
-            continue
-        degraded = {a: n for a, n in cw.worst_nic.items() if n <= s.gnss_bad_nic_max}
-        frac = len(degraded) / total
-        if frac < s.gnss_bad_fraction_threshold:
-            continue
-        lat = (ci + 0.5) * cell_deg
-        lon = (cj + 0.5) * cell_deg
-        assert cw.ts_min is not None and cw.ts_max is not None
-        incidents.append(
-            make_incident(
-                incident_id=f"jam:{ci}:{cj}:{wk}",
-                detector="jamming",
-                incident_type="GNSS interference",
-                # Confidence grows with how completely the cell degraded.
-                score=0.5 + 0.5 * frac,
-                reliability=grade_samples(total),
-                ts_start=cw.ts_min,
-                ts_end=cw.ts_max,
-                lat=lat,
-                lon=lon,
-                affected_count=len(degraded),
-                techniques=[TECH_JAMMING],
-                evidence={
-                    "aircraft_observed": total,
-                    "aircraft_degraded": len(degraded),
-                    "degraded_fraction": round(frac, 3),
-                    "worst_nic_by_aircraft": dict(sorted(degraded.items())),
-                    "bad_nic_max": s.gnss_bad_nic_max,
-                    "cell_deg": cell_deg,
-                    "window_minutes": s.gnss_window_minutes,
-                },
-                region=cw.region or region,
+    stats = JammingRunStats()
+    claimed: set[tuple[int, int, int]] = set()  # finest-level keys already answered
+
+    for level, cell_deg in enumerate(levels):
+        cells: dict[tuple[int, int, int], _CellWindow] = {}
+        fine_members: dict[tuple[int, int, int], set[tuple[int, int, int]]] = {}
+        for p in positions:
+            ts = utc_naive(p.ts)
+            bucket = int((ts - _EPOCH) // window)
+            fine_key = (
+                int(p.lat // s.gnss_cell_deg),
+                int(p.lon // s.gnss_cell_deg),
+                bucket,
             )
+            if fine_key in claimed:
+                continue  # already answered at a finer resolution
+            key = (int(p.lat // cell_deg), int(p.lon // cell_deg), bucket)
+            cw = cells.setdefault(key, _CellWindow())
+            fine_members.setdefault(key, set()).add(fine_key)
+            assert p.nic is not None
+            prev = cw.worst_nic.get(p.icao24)
+            if prev is None or p.nic < prev:
+                cw.worst_nic[p.icao24] = p.nic
+            if p.nac_p is not None:
+                prev_nac = cw.worst_nac_p.get(p.icao24)
+                if prev_nac is None or p.nac_p < prev_nac:
+                    cw.worst_nac_p[p.icao24] = p.nac_p
+            cw.ts_min = ts if cw.ts_min is None or ts < cw.ts_min else cw.ts_min
+            cw.ts_max = ts if cw.ts_max is None or ts > cw.ts_max else cw.ts_max
+            if cw.region is None:
+                cw.region = p.region
+
+        if level == 0:
+            stats.cells_seen = len(cells)
+
+        for (ci, cj, wk), cw in sorted(cells.items()):
+            total = len(cw.worst_nic)
+            if total < s.gnss_min_aircraft:
+                continue  # try again, coarser
+            # This patch of sky is answered; don't re-aggregate it at a coarser level.
+            claimed |= fine_members.get((ci, cj, wk), set())
+            _score_cell(incidents, s, cw, ci, cj, wk, cell_deg=cell_deg, level=level, region=region)
+
+    # Whatever never met the minimum at any resolution stays honestly unscored.
+    fine_keys = {
+        (
+            int(p.lat // s.gnss_cell_deg),
+            int(p.lon // s.gnss_cell_deg),
+            int((utc_naive(p.ts) - _EPOCH) // window),
         )
+        for p in positions
+    }
+    stats.cells_unscoreable = len(fine_keys - claimed)
     stats.incidents = len(incidents)
     log.info(
         "detect_jamming",
@@ -137,3 +143,69 @@ def detect_jamming(
         incidents=stats.incidents,
     )
     return incidents, stats
+
+
+def _score_cell(
+    incidents: list[Incident],
+    s: Settings,
+    cw: _CellWindow,
+    ci: int,
+    cj: int,
+    wk: int,
+    *,
+    cell_deg: float,
+    level: int,
+    region: str | None,
+) -> None:
+    """Emit an incident for one scoreable cell-window, if it crosses the threshold."""
+    total = len(cw.worst_nic)
+    degraded = {a: n for a, n in cw.worst_nic.items() if n <= s.gnss_bad_nic_max}
+    frac = len(degraded) / total
+    if frac < s.gnss_bad_fraction_threshold:
+        return
+    # Hard loss = both integrity channels collapsed on the same aircraft. Healthy traffic
+    # never reports NACp 0, so two-channel agreement is the sharp tier; an aircraft that
+    # never broadcast NACp is judged on NIC alone rather than assumed degraded.
+    hard_loss = {
+        a
+        for a, n in degraded.items()
+        if n <= s.gnss_hard_loss_nic
+        and cw.worst_nac_p.get(a, s.gnss_hard_loss_nac_p) <= s.gnss_hard_loss_nac_p
+    }
+    hard_frac = len(hard_loss) / total
+    assert cw.ts_min is not None and cw.ts_max is not None
+    incidents.append(
+        make_incident(
+            # The level is part of the id: the same patch of sky answered at a coarser
+            # resolution is a different claim, and must not collide with a finer one.
+            incident_id=f"jam:L{level}:{ci}:{cj}:{wk}",
+            detector="jamming",
+            incident_type="GNSS interference",
+            # Confidence grows with how completely the cell degraded, and again when the
+            # second channel corroborates the first.
+            score=min(1.0, 0.5 + 0.4 * frac + 0.1 * hard_frac),
+            reliability=grade_samples(total),
+            ts_start=cw.ts_min,
+            ts_end=cw.ts_max,
+            lat=(ci + 0.5) * cell_deg,
+            lon=(cj + 0.5) * cell_deg,
+            affected_count=len(degraded),
+            techniques=[TECH_JAMMING],
+            evidence={
+                "aircraft_observed": total,
+                "aircraft_degraded": len(degraded),
+                "degraded_fraction": round(frac, 3),
+                "aircraft_hard_loss": len(hard_loss),
+                "hard_loss_fraction": round(hard_frac, 3),
+                "hard_loss_aircraft": sorted(hard_loss),
+                "worst_nic_by_aircraft": dict(sorted(degraded.items())),
+                "bad_nic_max": s.gnss_bad_nic_max,
+                # Which resolution actually answered this patch of sky — a coarse cell is
+                # a weaker spatial claim than a fine one and should read as such.
+                "cell_deg": cell_deg,
+                "resolution_level": level,
+                "window_minutes": s.gnss_window_minutes,
+            },
+            region=cw.region or region,
+        )
+    )

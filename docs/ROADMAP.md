@@ -27,12 +27,20 @@ Honest status ledger — ✅ built & gated, 🔨 in progress, ⬜ planned.
 - Mirrors PHAROS architecture/conventions deliberately (tracks → detectors → composite →
   map), so the pair reads as one joint air + sea domain-awareness system.
 
-## Open (post-M9)
+## v2 — in progress
 
-- **Multi-day collection.** The 12.5-minute window bounds false positives only. Jamming
-  recall, GRU quality on real tracks, and diurnal behaviour all need days, not minutes.
-- **Decide the flagship on real data.** The synthetic set has linear PCA beating the GRU
-  (AUC 1.00 vs 0.976) because perfect circles are a linearly-separable caricature. That
-  comparison is only meaningful on real pattern-of-life tracks.
-- **The ARGUS-side consumer.** HORUS serves `/geoint/evidence` in ARGUS's `EvidenceItem`
-  shape; the consuming bridge (parallel to `argus/bridge/pharos.py`) is not built yet.
+| # | Milestone | Status |
+|---|-----------|--------|
+| V1 | Collector hardened for continuous operation: downtime bridged into the coverage ledger (between runs *and* mid-run host sleep), retention with a pilot-start floor, health/prune tooling, low-priority launch agent | ✅ installed & running |
+| V2 | Region-parameterised collection, so a second lane over a different part of the world runs through the same code path | ✅ |
+| V3 | Two-channel hard-loss tier (NIC 0 corroborated by NACp 0) — measured over real interference, degradation is near-binary rather than gradual | ✅ |
+| V4 | Multi-resolution scoring — sky too sparse for a fine cell falls through to a coarser one; unscoreable 83.0% → 23.7% with no new false positives | ✅ |
+| V5 | Positive/negative control evaluation — the same detector over a known-interference sky and a clean one, identical parameters | ✅ 15 incidents vs 0, simultaneous windows |
+| V6 | Multi-day Singapore window: diurnal unscoreable curve, per-detector false-positive rate | ⬜ needs wall-clock |
+| V7 | Decide the flagship anomaly model on real tracks | ✅ Isolation Forest eliminated (separation 1.21); GRU retained over PCA on separation 4.43 vs 3.99; the synthetic negative does not reproduce |
+| V8 | Coverage/plausibility model for the transponder-gap detector | ✅ real-data FP triage: 85 → 4 calls (outage ledger, descent, boundary-exit), true positives unchanged |
+| V9 | Incremental live processing, so the dashboard is current rather than batch-stale | ⬜ |
+| V10 | Live dashboard: interference heatmap with *unscoreable* rendered as a first-class state, NIC sparklines, collector freshness in the masthead | ⬜ |
+
+The ARGUS-side consumer is **done** — ARGUS reads this project's `/geoint/evidence` and
+cites air incidents alongside cyber and maritime ones.

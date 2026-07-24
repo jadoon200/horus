@@ -75,6 +75,23 @@ export default function HowItWorks() {
           and is skipped — counted and reported, never scored. A jamming map that colours
           empty cells is noise.
         </p>
+        <p>
+          <b>Multi-resolution.</b> One fixed cell size is always wrong somewhere: at 0.5°
+          over Singapore, 83% of cells held too few aircraft to score — the detector was
+          working but blind over most of the map. Sky that fails the minimum now falls
+          through to a coarser cell, and the resolution that answered it is recorded on the
+          incident, because a coarse cell is a weaker spatial claim than a fine one. That
+          took the unscoreable share from <b>83.0% to 23.7%</b> without raising a single
+          new incident over clean sky.
+        </p>
+        <p>
+          <b>Two channels, not one.</b> Aircraft broadcast NACp as well as NIC. Measured over
+          real interference, degradation is near-binary rather than gradual — 18 of 20
+          degraded aircraft sat at exactly NIC 0, and NACp collapsed with them, while healthy
+          traffic never reported NACp below 8. So NIC 0 <i>corroborated by</i> NACp 0 is
+          tracked as its own "hard loss" tier; an aircraft that never broadcast NACp is
+          judged on NIC alone rather than assumed degraded.
+        </p>
       </div>
       <div className="det-card">
         <h4>Dark aircraft (transponder gap)</h4>
@@ -146,6 +163,16 @@ export default function HowItWorks() {
           <i>confounder traps</i>: low-altitude coverage dropouts must not become "dark
           aircraft" (they don't), and a lone benign NIC dip must not become "jamming" (it
           doesn't).
+        </p>
+        <p>
+          <b>The control pair.</b> A quiet sky proves nothing on its own: zero incidents over
+          Singapore is equally consistent with "the detector works and there is no
+          interference" and "the detector never fires". So the same detector, with identical
+          parameters, is run over a region with ongoing GNSS interference and over a clean
+          one. The Baltic lane raises incidents with cells reaching 100% of observed aircraft
+          degraded; the Singapore lane raises none, and its NIC histogram contains only
+          healthy values. That is a <i>contrast</i>, not a precision figure — the
+          interference region has no per-cell ground-truth mask — and it is reported as such.
         </p>
         <p>
           <b>Recorded negative:</b> on the synthetic set the linear PCA baseline actually{' '}

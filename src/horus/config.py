@@ -46,6 +46,18 @@ class Settings(BaseSettings):
     # and an incident needs at least this fraction of them degraded.
     gnss_min_aircraft: int = 4
     gnss_bad_fraction_threshold: float = 0.5
+    # Hard integrity loss: measured over real interference (Baltic, 2026-07-23), degradation
+    # is near-binary rather than gradual — 18 of 20 degraded aircraft sat at exactly NIC 0,
+    # and NACp collapsed with it (15 at NACp 0), while healthy traffic never reported NACp
+    # below 8. So NIC 0 corroborated by NACp 0 is a far sharper signature than the ≤5 band,
+    # and it is tracked as its own tier rather than folded into the same count.
+    gnss_hard_loss_nic: int = 0
+    gnss_hard_loss_nac_p: int = 0
+    # Multi-resolution scoring: how many times the cell may be doubled when the fine grid
+    # holds too few aircraft. A fixed size is always wrong somewhere — at 0.5° over
+    # Singapore 83% of cells were unscoreable — so sky that fails the minimum falls through
+    # to a coarser level, and the level used is recorded on the incident. 0 disables.
+    gnss_coarsen_levels: int = 2
 
     # --- Dark-aircraft (transponder gap) detector ---------------------------------------
     # The coverage confound is *worse* than AIS: low-altitude traffic drops out of
@@ -54,6 +66,14 @@ class Settings(BaseSettings):
     gap_min_minutes: float = 10.0
     gap_min_displacement_km: float = 50.0
     gap_min_altitude_ft: float = 10_000.0
+    # An aircraft DESCENDING when it goes silent has a benign explanation: it was landing,
+    # and will reappear hours later on its next departure, displaced — which reads exactly
+    # like going dark. Measured on 11.7 h of real Singapore traffic: 25 of 34 gap calls were
+    # descending faster than this at the moment of silence, i.e. approach-and-turnaround, not
+    # evasion. A genuine dark event is an aircraft in CRUISE that stops transmitting, so a
+    # descent steeper than this disqualifies the call. (The maritime sibling learned the same
+    # lesson as anchored vessels being called ship-to-ship transfers.)
+    gap_max_descent_fpm: float = -300.0
 
     # --- Spoof / kinematic-impossibility detector ---------------------------------------
     # Faster than anything in civil traffic; an implied speed above this between fixes
