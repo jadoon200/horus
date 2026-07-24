@@ -9,6 +9,8 @@ claim.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -16,6 +18,7 @@ from horus.config import get_settings
 from horus.db.models import Incident, Position
 from horus.detect.base import TECH_INCURSION, make_incident
 from horus.logging import get_logger
+from horus.timeutil import utc_naive
 from horus.zones import zones_containing
 
 log = get_logger(__name__)
@@ -23,11 +26,16 @@ log = get_logger(__name__)
 _INCURSION_KINDS = frozenset({"border"})
 
 
-def detect_incursions(session: Session, region: str | None = None) -> list[Incident]:
+def detect_incursions(
+    session: Session, region: str | None = None, *, since: datetime | None = None
+) -> list[Incident]:
+    """Low-level watch-box incursions. `since` scopes the scan for the incremental lane."""
     s = get_settings()
     q = select(Position).where(Position.on_ground.is_(False)).order_by(Position.ts)
     if region:
         q = q.where(Position.region == region)
+    if since is not None:
+        q = q.where(Position.ts >= since)
 
     # (icao24, zone_id) -> ordered in-zone low-level samples
     hits: dict[tuple[str, str], list[Position]] = {}
@@ -45,7 +53,11 @@ def detect_incursions(session: Session, region: str | None = None) -> list[Incid
         dwell_min = (samples[-1].ts - samples[0].ts).total_seconds() / 60.0
         incidents.append(
             make_incident(
-                incident_id=f"incursion:{icao24}:{zone_id}",
+                # Time-scoped like every other detector's id. Without the timestamp, an
+                # incursion from outside a refresh window survives the window's delete and
+                # then collides with the one the scoped detector regenerates — a primary-key
+                # error that only the incremental lane can trigger.
+                incident_id=f"incursion:{icao24}:{zone_id}:{utc_naive(samples[0].ts).isoformat()}",
                 detector="incursion",
                 incident_type="low-level watch-box incursion",
                 score=min(1.0, 0.5 + 0.02 * dwell_min),
