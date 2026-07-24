@@ -8,6 +8,8 @@ an incident.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -23,11 +25,16 @@ log = get_logger(__name__)
 _MIN_VIOLATIONS = 3
 
 
-def detect_spoof(session: Session, region: str | None = None) -> list[Incident]:
+def detect_spoof(
+    session: Session, region: str | None = None, *, since: datetime | None = None
+) -> list[Incident]:
+    """Kinematic-impossibility calls. `since` scopes the scan for the incremental lane."""
     s = get_settings()
     q = select(Position).order_by(Position.icao24, Position.ts)
     if region:
         q = q.where(Position.region == region)
+    if since is not None:
+        q = q.where(Position.ts >= since)
 
     violations: dict[str, list[Position]] = {}
     speeds: dict[str, list[float]] = {}
@@ -48,7 +55,9 @@ def detect_spoof(session: Session, region: str | None = None) -> list[Incident]:
         vmax = max(speeds[icao24])
         incidents.append(
             make_incident(
-                incident_id=f"spoof:{icao24}",
+                # Time-scoped for the same reason as incursion: an id without a timestamp
+                # collides across incremental refresh windows.
+                incident_id=f"spoof:{icao24}:{utc_naive(hits[0].ts).isoformat()}",
                 detector="spoof",
                 incident_type="kinematic impossibility / identity anomaly",
                 score=min(1.0, 0.6 + 0.1 * len(hits)),

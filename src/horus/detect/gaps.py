@@ -64,11 +64,22 @@ def _outage_windows(session: Session) -> list[tuple[datetime, datetime | None]]:
     ]
 
 
-def detect_gaps(session: Session, region: str | None = None) -> list[Incident]:
+def detect_gaps(
+    session: Session, region: str | None = None, *, since: datetime | None = None
+) -> list[Incident]:
+    """Dark-aircraft candidates.
+
+    `since` scopes the scan for the incremental lane. A gap's `ts_start` is the last report
+    *before* the silence, so restricting input positions to `ts >= since` yields exactly the
+    incidents that start inside the window — a gap opening earlier is correctly excluded
+    rather than half-seen, because it is already stored and unchanged.
+    """
     s = get_settings()
     q = select(Position).order_by(Position.icao24, Position.ts)
     if region:
         q = q.where(Position.region == region)
+    if since is not None:
+        q = q.where(Position.ts >= since)
     outages = _outage_windows(session)
 
     incidents: list[Incident] = []

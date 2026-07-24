@@ -21,7 +21,7 @@ import numpy as np
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from horus.config import get_settings
+from horus.config import Settings, get_settings
 from horus.db.base import session_scope
 from horus.db.models import Position, Track
 from horus.geo import haversine_series_km
@@ -98,6 +98,45 @@ def track_features(points: list[_Point], n: int) -> list[float]:
     return [float(v) for v in seq.reshape(-1)]
 
 
+def segment_aircraft(
+    icao24: str, positions: list[Position], settings: Settings | None = None
+) -> list[Track]:
+    """Derive one aircraft's tracks from its ordered positions.
+
+    Split out of `build_tracks` so the incremental lane can rebuild a single aircraft
+    without touching anyone else's tracks — both paths must produce byte-identical rows,
+    which is only guaranteed if they share this function rather than reimplementing it.
+    Ground reports are the caller's to filter; airborne shape is what a track describes.
+    """
+    s = settings or get_settings()
+    points = [_Point(p.ts, p.lat, p.lon, p.alt_baro_ft, p.region) for p in positions]
+    tracks: list[Track] = []
+    for seg in _segments(points, s.track_gap_minutes):
+        if len(seg) < s.track_min_points:
+            continue
+        lats = np.array([p.lat for p in seg])
+        lons = np.array([p.lon for p in seg])
+        distance = float(np.sum(haversine_series_km(lats, lons)))
+        tracks.append(
+            Track(
+                track_id=f"{icao24}:{utc_naive(seg[0].ts).isoformat()}",
+                icao24=icao24,
+                region=seg[0].region,  # this segment's own region, not the aircraft's last
+                start_ts=seg[0].ts,
+                end_ts=seg[-1].ts,
+                point_count=len(seg),
+                distance_km=distance,
+                start_lat=seg[0].lat,
+                start_lon=seg[0].lon,
+                end_lat=seg[-1].lat,
+                end_lon=seg[-1].lon,
+                features=track_features(seg, s.track_resample_points),
+                sequence=track_sequence(seg, s.track_resample_points),
+            )
+        )
+    return tracks
+
+
 def build_tracks(session: Session, region: str | None = None) -> int:
     """Full rebuild of the tracks table (for the region, when given); returns count."""
     s = get_settings()
@@ -108,39 +147,16 @@ def build_tracks(session: Session, region: str | None = None) -> int:
         pos_q = pos_q.where(Position.region == region)
     session.execute(del_q)
 
-    by_aircraft: dict[str, list[_Point]] = {}
+    by_aircraft: dict[str, list[Position]] = {}
     for p in session.scalars(pos_q):
         if p.on_ground:
             continue  # taxiing is not flight shape
-        by_aircraft.setdefault(p.icao24, []).append(
-            _Point(p.ts, p.lat, p.lon, p.alt_baro_ft, p.region)
-        )
+        by_aircraft.setdefault(p.icao24, []).append(p)
 
     n_tracks = 0
-    for icao24, points in by_aircraft.items():
-        for seg in _segments(points, s.track_gap_minutes):
-            if len(seg) < s.track_min_points:
-                continue
-            lats = np.array([p.lat for p in seg])
-            lons = np.array([p.lon for p in seg])
-            distance = float(np.sum(haversine_series_km(lats, lons)))
-            session.add(
-                Track(
-                    track_id=f"{icao24}:{utc_naive(seg[0].ts).isoformat()}",
-                    icao24=icao24,
-                    region=seg[0].region,  # this segment's own region, not the aircraft's last
-                    start_ts=seg[0].ts,
-                    end_ts=seg[-1].ts,
-                    point_count=len(seg),
-                    distance_km=distance,
-                    start_lat=seg[0].lat,
-                    start_lon=seg[0].lon,
-                    end_lat=seg[-1].lat,
-                    end_lon=seg[-1].lon,
-                    features=track_features(seg, s.track_resample_points),
-                    sequence=track_sequence(seg, s.track_resample_points),
-                )
-            )
+    for icao24, positions in by_aircraft.items():
+        for track in segment_aircraft(icao24, positions, s):
+            session.add(track)
             n_tracks += 1
     log.info("build_tracks", aircraft=len(by_aircraft), tracks=n_tracks)
     return n_tracks

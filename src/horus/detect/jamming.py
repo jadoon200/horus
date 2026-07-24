@@ -63,12 +63,22 @@ class JammingRunStats:
 
 
 def detect_jamming(
-    session: Session, region: str | None = None
+    session: Session, region: str | None = None, *, since: datetime | None = None
 ) -> tuple[list[Incident], JammingRunStats]:
+    """Area-level GNSS-interference incidents.
+
+    `since` restricts scoring to reports at or after that time — the incremental lane's
+    handle. A cell-window whose reports are entirely in the past cannot change, so
+    re-scoring it would only reproduce what is already stored. Note this is a filter on the
+    *input reports*, so a window straddling the boundary is scored on its visible part
+    only; callers pass a `since` comfortably older than any window they care about.
+    """
     s = get_settings()
     q = select(Position).where(Position.nic.is_not(None), Position.on_ground.is_(False))
     if region:
         q = q.where(Position.region == region)
+    if since is not None:
+        q = q.where(Position.ts >= since)
 
     window = timedelta(minutes=s.gnss_window_minutes)
     positions = list(session.scalars(q))

@@ -39,7 +39,7 @@ Honest status ledger — ✅ built & gated, 🔨 in progress, ⬜ planned.
 | V6 | Multi-day Singapore window: diurnal unscoreable curve, per-detector false-positive rate | ⬜ needs wall-clock |
 | V7 | Decide the flagship anomaly model on real tracks | ✅ Isolation Forest eliminated (separation 1.21); GRU retained over PCA on separation 4.43 vs 3.99; the synthetic negative does not reproduce |
 | V8 | Coverage/plausibility model for the transponder-gap detector | ✅ real-data FP triage: 85 → 4 calls (outage ledger, descent, boundary-exit), true positives unchanged |
-| V9 | Incremental live processing, so the dashboard is current rather than batch-stale | ⬜ |
+| V9 | Incremental live processing, so the dashboard is current rather than batch-stale | ✅ warm cycle bounded by the refresh window, not the corpus (6 h → 0.67 s); parity with full rebuild tested |
 | V10 | Live dashboard: interference heatmap with *unscoreable* rendered as a first-class state, NIC sparklines, collector freshness in the masthead | ⬜ |
 
 The ARGUS-side consumer is **done** — ARGUS reads this project's `/geoint/evidence` and

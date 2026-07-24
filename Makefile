@@ -1,4 +1,4 @@
-.PHONY: env install lint typecheck test check up down migrate collect collector-install collector-stop health prune tracks detect eval api ui
+.PHONY: env install lint typecheck test check up down migrate collect collector-install collector-stop process-live health prune tracks detect eval api ui
 
 # One-time: create the conda env, then `conda activate horus`
 env:
@@ -41,6 +41,11 @@ collector-install:
 
 collector-stop:
 	launchctl unload ~/Library/LaunchAgents/com.horus.collector.plist
+
+# Incremental processing worker — keeps the air picture current without reprocessing
+# the whole corpus each cycle. Run alongside the collector.
+process-live:
+	python -m scripts.process_live
 
 # One-shot health glance at the live lane (read-only).
 health:
