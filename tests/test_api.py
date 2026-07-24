@@ -78,3 +78,31 @@ def test_air_picture_and_evidence_shape(client: TestClient) -> None:
     assert item["source"] == "HORUS air domain awareness"
     assert item["reliability"] in "ABCDEF" and 1 <= item["credibility"] <= 6
     assert "Human-review" in item["summary"]
+
+
+def test_gnss_coverage_reports_three_states(client: TestClient) -> None:
+    """Unscoreable sky must be served as its own state, not omitted or implied clear."""
+    data = client.get("/gnss-coverage", params={"hours": 720}).json()
+    assert data["cells_total"] == data["cells_scoreable"] + data["cells_unscoreable"]
+    assert data["cells_unscoreable"] > 0, "the scenario has sparse sky; it must be reported"
+    assert data["min_aircraft"] >= 1
+
+    by_state = {c["scoreable"] for c in data["cells"]}
+    assert by_state == {True, False}
+    for c in data["cells"]:
+        if c["scoreable"]:
+            # A scoreable cell always carries a fraction; it is never null.
+            assert c["degraded_fraction"] is not None
+            assert c["aircraft_observed"] >= data["min_aircraft"]
+        else:
+            # An unscoreable cell must NOT report a fraction — that would invite a reader
+            # to treat "no data" as "0% degraded", which is the exact lie to avoid.
+            assert c["degraded_fraction"] is None
+            assert c["aircraft_observed"] < data["min_aircraft"]
+
+
+def test_stats_exposes_collection_freshness(client: TestClient) -> None:
+    """A dashboard that looks live while the collector is dead is worse than one that admits it."""
+    stats = client.get("/stats").json()
+    assert stats["newest_report"] is not None
+    assert stats["data_age_seconds"] is not None and stats["data_age_seconds"] >= 0
