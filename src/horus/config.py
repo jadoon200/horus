@@ -86,6 +86,17 @@ class Settings(BaseSettings):
     api_rate_limit_requests: int = 30
     api_rate_limit_window_seconds: float = 60.0
     api_max_concurrent_inference: int = 2
+    # Behind a proxy (Render terminates TLS) the client IP is in X-Forwarded-For, not the
+    # socket peer. Trust it there so rate limiting is per real client; NEVER trust it when
+    # directly exposed, since a client could then spoof its own rate-limit bucket.
+    api_trust_forwarded_header: bool = False
+
+    # --- Demo / snapshot mode (the deployed free container) -----------------------------
+    # The public demo ships a BAKED synthetic seed, not a live feed. In demo mode the
+    # time-relative views stop pretending to be live: /gnss-coverage ignores its rolling
+    # window (a fixed snapshot has no "last N hours"), and the UI shows a snapshot banner.
+    # This is the honest framing — a snapshot is labelled a snapshot, never dressed as live.
+    demo_mode: bool = False
 
 
 @lru_cache

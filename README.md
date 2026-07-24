@@ -70,6 +70,21 @@ make check                                          # ruff + mypy strict + pytes
 make up                                             # Postgres (host port 5435) + migrations
 ```
 
+## Deploy
+
+A single free container (`Dockerfile.web` + `render.yaml`, the sibling pattern) builds the
+dashboard, installs a slim API runtime, and bakes a **synthetic** demo seed — no real
+aircraft identities ship in the image. It serves the read-only API + the SPA from one
+service, no managed database. In demo mode the UI shows a "snapshot" banner and the coverage
+map shows the whole baked picture (a fixed snapshot has no rolling window). Build and run:
+
+```bash
+docker build -f Dockerfile.web -t horus-web .
+docker run -p 8000:8000 -e HORUS_DEMO_MODE=true horus-web
+```
+
+To publish: push to GitHub, then New → Blueprint on Render and point it at `render.yaml`.
+
 ## Responsible use
 
 Public, unauthenticated ADS-B broadcasts only; aircraft-level (never individual persons);

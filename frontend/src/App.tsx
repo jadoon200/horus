@@ -32,7 +32,17 @@ function Freshness() {
     queryFn: api.stats,
     refetchInterval: 30_000,
   })
-  if (!data || data.data_age_seconds == null) return null
+  if (!data) return null
+  // A baked demo is honestly a snapshot, not a dead live feed — say so plainly rather than
+  // showing a staleness warning that implies something is broken.
+  if (data.demo_mode) {
+    return (
+      <span className="status-pill snapshot" title="Baked synthetic snapshot — run locally for the live lane">
+        ◆ demo snapshot
+      </span>
+    )
+  }
+  if (data.data_age_seconds == null) return null
   const mins = data.data_age_seconds / 60
   const stale = mins > 5
   const label =

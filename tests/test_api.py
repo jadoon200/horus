@@ -106,3 +106,36 @@ def test_stats_exposes_collection_freshness(client: TestClient) -> None:
     stats = client.get("/stats").json()
     assert stats["newest_report"] is not None
     assert stats["data_age_seconds"] is not None and stats["data_age_seconds"] >= 0
+
+
+def test_demo_mode_serves_the_whole_snapshot(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient
+) -> None:
+    """A baked demo has no rolling window; demo mode must show the whole snapshot.
+
+    The synthetic seed's timestamps are weeks in the past, so a `now - hours` filter would
+    return an empty map on the deployed demo. In demo mode /gnss-coverage ignores the window
+    and /stats advertises demo_mode so the UI shows a snapshot banner rather than a staleness
+    warning.
+    """
+    from horus.config import get_settings
+
+    get_settings.cache_clear()
+    monkeypatch.setenv("HORUS_DEMO_MODE", "true")
+
+    # Live-mode window excludes the weeks-old synthetic seed entirely...
+    get_settings.cache_clear()
+    monkeypatch.delenv("HORUS_DEMO_MODE", raising=False)
+    live = client.get("/gnss-coverage", params={"hours": 6}).json()
+
+    get_settings.cache_clear()
+    monkeypatch.setenv("HORUS_DEMO_MODE", "true")
+    demo = client.get("/gnss-coverage", params={"hours": 6}).json()
+    assert client.get("/stats").json()["demo_mode"] is True
+
+    get_settings.cache_clear()
+    monkeypatch.delenv("HORUS_DEMO_MODE", raising=False)
+
+    # ...but demo mode shows it regardless of the window.
+    assert demo["cells_total"] > 0
+    assert demo["cells_total"] >= live["cells_total"]

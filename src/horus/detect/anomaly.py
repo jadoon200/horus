@@ -9,8 +9,6 @@ model-adoption discipline shared across the portfolio).
 from __future__ import annotations
 
 import numpy as np
-from sklearn.decomposition import PCA
-from sklearn.ensemble import IsolationForest
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -18,6 +16,10 @@ from horus.db.models import Incident, Track
 from horus.detect.base import TECH_ANOMALY, make_incident
 from horus.detect.seq_anomaly import AnomalyModel, train_model
 from horus.logging import get_logger
+
+# scikit-learn is imported lazily inside the two baseline scorers below. They are eval-only
+# (the flagship is the torch GRU), so the deterministic detection path — including the demo
+# seed baked into the deploy image — must not require sklearn just to import this module.
 
 log = get_logger(__name__)
 
@@ -28,6 +30,8 @@ _MIN_TRACKS_TO_TRAIN = 5
 
 def iforest_scores(features: list[list[float]], seed: int = 7) -> np.ndarray:
     """Isolation-Forest anomaly scores (higher = more anomalous)."""
+    from sklearn.ensemble import IsolationForest
+
     x = np.asarray(features, dtype=float)
     model = IsolationForest(random_state=seed, n_estimators=200)
     model.fit(x)
@@ -36,6 +40,8 @@ def iforest_scores(features: list[list[float]], seed: int = 7) -> np.ndarray:
 
 def pca_scores(features: list[list[float]], n_components: int = 4) -> np.ndarray:
     """Linear PCA reconstruction error (higher = more anomalous)."""
+    from sklearn.decomposition import PCA
+
     x = np.asarray(features, dtype=float)
     mean = x.mean(axis=0)
     std = np.maximum(x.std(axis=0), 1e-9)
