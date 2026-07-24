@@ -9,12 +9,13 @@ overlap a recorded *collector* outage (our own downtime must never be an inciden
 
 from __future__ import annotations
 
+import math
 from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from horus.config import get_settings
+from horus.config import Settings, get_settings
 from horus.db.models import CoverageOutage, Incident, Position
 from horus.detect.base import TECH_DARK, make_incident
 from horus.geo import haversine_km
@@ -22,6 +23,37 @@ from horus.logging import get_logger
 from horus.timeutil import utc_naive
 
 log = get_logger(__name__)
+
+
+def _could_have_left_coverage(
+    lat: float, lon: float, gs_kt: float | None, gap_minutes: float, s: Settings
+) -> bool:
+    """Could the aircraft have flown out of the collection circle and back in this gap?
+
+    The collector watches a fixed-radius circle. An aircraft that departs, crosses the
+    boundary and returns hours later reappears displaced after a long silence — which is
+    the dark-aircraft signature exactly, but the explanation is our own collection volume,
+    not the aircraft. If there was time to reach the boundary and come back, the silence is
+    fully explained by geometry and the call is not attributable.
+
+    Deliberately conservative: it uses the aircraft's own last known ground speed and the
+    straight-line distance to the boundary, so it only suppresses calls where exit is
+    *comfortably* possible. This is the air-domain analogue of the maritime sibling's
+    coverage model — never claim what coverage can explain.
+    """
+    speed = gs_kt or 0.0
+    if speed <= 0:
+        return False
+    # Distance to the boundary, in nautical miles, from the collection centre.
+    dlat_nm = (lat - s.adsb_center_lat) * 60.0
+    dlon_nm = (
+        (lon - s.adsb_center_lon) * 60.0 * math.cos(math.radians((lat + s.adsb_center_lat) / 2))
+    )
+    from_centre = math.hypot(dlat_nm, dlon_nm)
+    to_boundary = max(0.0, s.adsb_radius_nm - from_centre)
+    # Out and back at its own cruise speed, in minutes.
+    round_trip_minutes = 2.0 * (to_boundary / speed) * 60.0
+    return gap_minutes >= round_trip_minutes
 
 
 def _outage_windows(session: Session) -> list[tuple[datetime, datetime | None]]:
@@ -49,10 +81,17 @@ def detect_gaps(session: Session, region: str | None = None) -> list[Incident]:
             in_outage = any(o0 <= t1 and (o1 is None or t0 <= o1) for o0, o1 in outages)
             displacement = haversine_km(prev.lat, prev.lon, p.lat, p.lon)
             at_altitude = (prev.alt_baro_ft or 0.0) >= s.gap_min_altitude_ft
+            # Descending at the moment of silence = landing, not going dark.
+            descending = (prev.baro_rate_fpm or 0.0) < s.gap_max_descent_fpm
+            # Long enough to have left the collection circle and returned = our boundary,
+            # not the aircraft's behaviour.
+            left_coverage = _could_have_left_coverage(prev.lat, prev.lon, prev.gs_kt, gap_min, s)
             if (
                 gap_min >= s.gap_min_minutes
                 and displacement >= s.gap_min_displacement_km
                 and at_altitude
+                and not descending
+                and not left_coverage
                 and not in_outage
             ):
                 # Longer + farther = more confident it's not a reception blip.
@@ -76,6 +115,8 @@ def detect_gaps(session: Session, region: str | None = None) -> list[Incident]:
                             "displacement_km": round(displacement, 1),
                             "last_alt_baro_ft": prev.alt_baro_ft,
                             "altitude_floor_ft": s.gap_min_altitude_ft,
+                            "vertical_rate_fpm": prev.baro_rate_fpm,
+                            "ground_speed_kt": prev.gs_kt,
                             "caveat": "a gap may be benign coverage loss; graded, not judged",
                         },
                         # The data's own region, not the query filter: an unscoped run

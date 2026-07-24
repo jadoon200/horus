@@ -137,3 +137,70 @@ def test_retention_prunes_old_positions_but_respects_the_floor() -> None:
         # block on its own uncommitted pages.
         assert checkpoint_wal(s) is True
         assert database_bytes(s) > 0
+
+
+def _cruise(
+    icao: str, alt: float, rate: float | None, gs: float | None, lat: float, lon: float, mins: float
+):
+    from horus.db.models import Position
+
+    return Position(
+        icao24=icao,
+        ts=T0 + timedelta(minutes=mins),
+        lat=lat,
+        lon=lon,
+        alt_baro_ft=alt,
+        baro_rate_fpm=rate,
+        gs_kt=gs,
+        region="sg",
+    )
+
+
+def test_descending_aircraft_is_not_called_dark() -> None:
+    """A landing is not a disappearance.
+
+    Measured on 11.7 h of real Singapore traffic: 25 of 34 gap calls were descending at the
+    moment of silence — aircraft on approach that landed, sat, and departed hours later,
+    reappearing displaced. That is the dark signature with a completely benign cause.
+    """
+    from horus.config import Settings
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    with _session() as s:
+        s.add(Aircraft(icao24="desc01"))
+        s.add(Aircraft(icao24="cruz01"))
+        # Same silence and displacement; only the vertical rate differs. The gap is kept
+        # short enough that the coverage-exit rule cannot fire, so this isolates descent.
+        s.add(_cruise("desc01", 25000, -1800, 400, 1.30, 103.8, 0))
+        s.add(_cruise("desc01", 25000, None, 400, 1.90, 104.4, 30))
+        s.add(_cruise("cruz01", 35000, 0, 460, 1.30, 103.8, 0))
+        s.add(_cruise("cruz01", 35000, None, 460, 1.90, 104.4, 30))
+        s.commit()
+
+        flagged = {i.icao24 for i in detect_gaps(s, "sg")}
+        assert "cruz01" in flagged, "a level-flight aircraft going silent is the real signature"
+        assert "desc01" not in flagged, "a descending aircraft was landing, not going dark"
+        assert settings.gap_max_descent_fpm < 0
+
+
+def test_aircraft_that_could_have_left_the_circle_is_not_called_dark() -> None:
+    """The collector watches a finite circle; leaving it is our boundary, not evasion.
+
+    An aircraft that departs, crosses the collection boundary and returns hours later
+    reappears displaced after a long silence. Geometry fully explains that, so the call is
+    not attributable — the air-domain analogue of the maritime coverage model.
+    """
+    with _session() as s:
+        s.add(Aircraft(icao24="longx1"))
+        s.add(Aircraft(icao24="shortx"))
+        # Near the centre at cruise speed: 8 hours is ample to exit 250 nm and come back.
+        s.add(_cruise("longx1", 35000, 0, 460, 1.35, 103.82, 0))
+        s.add(_cruise("longx1", 35000, None, 460, 1.95, 104.4, 480))
+        # Same aircraft, same place, but only 11 minutes silent — no time to leave.
+        s.add(_cruise("shortx", 35000, 0, 460, 1.35, 103.82, 0))
+        s.add(_cruise("shortx", 35000, None, 460, 1.95, 104.4, 11))
+        s.commit()
+
+        flagged = {i.icao24 for i in detect_gaps(s, "sg")}
+        assert "shortx" in flagged, "too brief to have left coverage — a real gap"
+        assert "longx1" not in flagged, "had time to exit the circle and return"

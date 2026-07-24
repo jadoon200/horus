@@ -61,6 +61,49 @@ python -m scripts.eval_control \
 Interference is not static — a future run over the same box may find a clean sky, which is
 a property of the world rather than a regression in the detector.
 
+## Dark-aircraft false positives on 11.7 h of real traffic (2026-07-24)
+
+The first 12.5-minute window raised zero gap calls, which said nothing — it was too short
+for any aircraft to go silent. An overnight run finally exposed the detector's real
+behaviour, and the raw number was bad: **85 dark-aircraft calls** over 11.7 hours of
+Singapore traffic. Three separate causes, each diagnosed from the data and each fixed:
+
+| Stage | Calls | What was removed |
+|---|---:|---|
+| Raw | 85 | — |
+| Collector-outage ledger | 34 | **51** silences caused by *our own host sleeping* |
+| Descent exclusion | 9 | **25** aircraft that were landing, not disappearing |
+| Coverage-exit exclusion | **4** | **5** that had time to leave the 250 nm circle and return |
+
+**Our own downtime was the single largest cause.** The host slept 8 times overnight
+(209 min ledgered). During a sleep every aircraft stops reporting and reappears displaced —
+the dark signature exactly — so without the ledger, 60% of all calls would have been
+artefacts of the collector rather than observations of the sky.
+
+**Descent.** 25 of the remaining 34 were descending when they went silent. An aircraft on
+approach lands, sits, and departs hours later, reappearing far away: benign, and now
+excluded on vertical rate. A genuine dark event is an aircraft in *cruise* that stops
+transmitting.
+
+**The collection boundary.** The collector watches a finite 250 nm circle. An aircraft that
+departs, crosses the boundary and returns hours later also reappears displaced after a long
+silence. A conservative geometric test — could it have reached the boundary and come back at
+its own last known ground speed? — removes those. This is the air-domain analogue of the
+maritime sibling's coverage model: never claim what coverage can explain.
+
+The four survivors are the plausible ones, e.g. `781d9e`: silent 10.7 min at 36,000 ft in
+**level** flight at 458 kt, reappearing 134 km displaced. One survivor (`8a0ab8`) broadcast
+no ground speed, so the coverage test could not run on it — a limitation, recorded rather
+than hidden.
+
+**The exclusions cost no true positives:** the synthetic gold set still returns gap recall
+1.0 and precision 1.0 against its injected dark aircraft, and the low-altitude coverage-
+dropout trap still stays quiet.
+
+This mirrors the maritime sibling's first real-data run almost exactly (2,999 → 51 calls
+after three domain-correct fixes), and for the same underlying reason: a detector tuned on
+generated data meets failure modes that only real operations contain.
+
 ## Flagship anomaly model, decided on real tracks (2026-07-24)
 
 The synthetic gold set could not settle this and said so: there, two perfectly circular
