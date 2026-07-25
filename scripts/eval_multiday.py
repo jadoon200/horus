@@ -14,9 +14,9 @@ Honesty constraints baked in:
 - **Outages are shown, not spanned.** Ledgered collector downtime (host sleep) is printed as
   its own rows; an hour that is mostly outage is flagged, because a low incident count there
   is our silence, not a quiet sky.
-- **One partial cycle, stated as such.** The span usually covers a single local midnight, so
-  the shape is suggestive, not a multi-day law — the report says so rather than implying a
-  stable diurnal curve from n=1.
+- **Cycle readiness is measured.** Before 48 hours the output stays a dated hour-by-hour
+  trace. At 48 hours it becomes a Singapore-clock cross-day mean ± population spread, with
+  the sample count visible and partial/outage-distorted buckets excluded.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
+from statistics import fmean, pstdev
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -44,6 +45,7 @@ log = get_logger(__name__)
 
 _EVAL_MD = Path(__file__).resolve().parents[1] / "docs" / "EVAL.md"
 _DETECTORS = ("jamming", "gap", "incursion", "spoof")
+_SINGAPORE_OFFSET = timedelta(hours=8)
 
 
 @dataclass
@@ -61,15 +63,34 @@ class HourStats:
         return 100.0 * self.unscoreable / self.cell_windows if self.cell_windows else 0.0
 
 
+@dataclass(frozen=True)
+class ClockHourStats:
+    """Cross-day distribution for one Singapore local clock hour."""
+
+    local_hour: int
+    samples: int
+    reports_mean: float
+    reports_spread: float
+    unscoreable_mean: float
+    unscoreable_spread: float
+
+
 def _hour_floor(ts: datetime) -> datetime:
     return ts.replace(minute=0, second=0, microsecond=0)
 
 
-def evaluate(session: Session, region: str) -> tuple[list[HourStats], list[CoverageOutage]]:
+def _hour_ceil(ts: datetime) -> datetime:
+    floor = _hour_floor(ts)
+    return floor if ts == floor else floor + timedelta(hours=1)
+
+
+def evaluate(
+    session: Session, region: str
+) -> tuple[list[HourStats], int, datetime | None, datetime | None]:
     lo = session.scalar(select(func.min(Position.ts)).where(Position.region == region))
     hi = session.scalar(select(func.max(Position.ts)).where(Position.region == region))
     if lo is None or hi is None:
-        return [], []
+        return [], 0, None, None
     lo, hi = utc_naive(lo), utc_naive(hi)
 
     # Detectors are called directly — they return lists and never touch the DB — so the eval
@@ -122,73 +143,143 @@ def evaluate(session: Session, region: str) -> tuple[list[HourStats], list[Cover
                 hours[cur].outage_minutes += overlap
             cur = nxt
 
-    return [hours[k] for k in sorted(hours)], len(outages)
+    return [hours[k] for k in sorted(hours)], len(outages), lo, hi
 
 
-def render(rows: list[HourStats], outage_count: int, span_h: float) -> str:
+def aggregate_clock_hours(
+    rows: list[HourStats], start: datetime, end: datetime
+) -> list[ClockHourStats]:
+    """Aggregate complete, non-outage UTC buckets by Singapore local clock hour.
+
+    The first and last buckets are often partial because collection began at an arbitrary
+    minute. Hours with at least five minutes of ledgered outage are also removed: averaging
+    collector silence into a traffic trough would make the diurnal curve look cleaner than
+    the evidence permits.
+    """
+    complete_start = _hour_ceil(start)
+    by_hour: dict[int, list[HourStats]] = defaultdict(list)
+    for row in rows:
+        if row.hour < complete_start or row.hour + timedelta(hours=1) > end:
+            continue
+        if row.outage_minutes >= 5 or row.cell_windows < 5:
+            continue
+        local_hour = (row.hour + _SINGAPORE_OFFSET).hour
+        by_hour[local_hour].append(row)
+
+    result: list[ClockHourStats] = []
+    for local_hour in sorted(by_hour):
+        samples = by_hour[local_hour]
+        reports = [float(row.reports) for row in samples]
+        unscoreable = [row.unscoreable_pct for row in samples]
+        result.append(
+            ClockHourStats(
+                local_hour=local_hour,
+                samples=len(samples),
+                reports_mean=fmean(reports),
+                reports_spread=pstdev(reports),
+                unscoreable_mean=fmean(unscoreable),
+                unscoreable_spread=pstdev(unscoreable),
+            )
+        )
+    return result
+
+
+def _detector_mix(rows: list[HourStats], span_h: float) -> list[str]:
+    totals = {d: sum(r.incidents[d] for r in rows) for d in _DETECTORS}
+    top = max(totals, key=lambda d: totals[d])
+    if totals[top] == 0:
+        return []
+    days = max(span_h / 24.0, 1 / 24)
+    return [
+        "",
+        "**Detector mix over the span:** "
+        + ", ".join(f"{d} {totals[d]}" for d in _DETECTORS)
+        + ". Review-call rates per 24 h: "
+        + ", ".join(f"{d} {totals[d] / days:.1f}" for d in _DETECTORS)
+        + f". The **{top}** detector is the largest class. These are review calls, not "
+        "confirmed hostile events; detector-specific plausibility audits elsewhere in this "
+        "report decide whether a class is over-firing.",
+    ]
+
+
+def render(
+    rows: list[HourStats],
+    outage_count: int,
+    start: datetime,
+    end: datetime,
+) -> str:
+    span_h = (end - start).total_seconds() / 3600.0
     # Sum the per-hour attributed minutes rather than re-reading the ORM outage rows: the
     # eval session is rolled back and closed by the time we render, so those objects are
     # detached — the plain floats on each HourStats are the durable record.
     total_out = sum(r.outage_minutes for r in rows)
+    aggregates = aggregate_clock_hours(rows, start, end)
+    multi_cycle = span_h >= 48 and len(aggregates) == 24
     lines = [
         "## Diurnal behaviour over the continuous Singapore lane",
         "",
-        f"A single continuous span of **{span_h:.1f} h** (Singapore is UTC+8, so this crosses "
-        "one local midnight). This shows the *shape* of the day — it is one partial cycle, not "
-        "a multi-day average, and no stable diurnal law is claimed from n=1.",
+        f"A continuous span of **{span_h:.1f} h** from `{start.isoformat()}` to "
+        f"`{end.isoformat()}`.",
         "",
         f"**Coverage honesty:** {outage_count} ledgered outages totalling ~{total_out:.0f} min "
-        "(host sleep). Hours with material outage are flagged `*`; a low incident count there "
-        "is our own silence, not a quiet sky.",
-        "",
-        "| UTC hour | Reports | Aircraft | Unscoreable | jam | gap | incur | spoof | Outage |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "(host sleep). Buckets with ≥5 outage minutes and the partial first/last UTC hours are "
+        "excluded from the cross-day curve; a low count during our silence is not a quiet sky.",
     ]
-    for r in rows:
-        flag = " `*`" if r.outage_minutes >= 5 else ""
-        lines.append(
-            f"| {r.hour:%H:%M} | {r.reports:,} | {r.aircraft} | "
-            f"{r.unscoreable}/{r.cell_windows} ({r.unscoreable_pct:.0f}%) | "
-            f"{r.incidents['jamming']} | {r.incidents['gap']} | "
-            f"{r.incidents['incursion']} | {r.incidents['spoof']} | "
-            f"{r.outage_minutes:.0f}m{flag} |"
-        )
-    # The honest read: does the unscoreable fraction track the traffic trough? Only hours
-    # with negligible outage count — otherwise a low-traffic hour might be low because the
-    # collector was asleep, not because the sky was quiet, and the comparison would measure
-    # our downtime rather than the diurnal cycle.
-    scored = [r for r in rows if r.cell_windows >= 5 and r.outage_minutes < 5]
-    if scored:
-        busiest = max(scored, key=lambda r: r.reports)
-        quietest = min(scored, key=lambda r: r.reports)
+
+    if multi_cycle:
+        lines += [
+            "",
+            "This crosses the **48-hour / two-cycle bar**. The table is a cross-day "
+            "Singapore-clock mean ± population standard deviation (SD), not the earlier "
+            "single partial-cycle trace. `n` is visible because outage-affected clock hours "
+            "can still have only one clean observation.",
+            "",
+            "| SGT hour | Clean days (n) | Reports, mean ± SD | Unscoreable, mean ± SD |",
+            "|---|---:|---:|---:|",
+        ]
+        for row in aggregates:
+            lines.append(
+                f"| {row.local_hour:02d}:00 | {row.samples} | "
+                f"{row.reports_mean:,.0f} ± {row.reports_spread:,.0f} | "
+                f"{row.unscoreable_mean:.1f}% ± {row.unscoreable_spread:.1f} pp |"
+            )
+        busiest = max(aggregates, key=lambda row: row.reports_mean)
+        quietest = min(aggregates, key=lambda row: row.reports_mean)
         lines += [
             "",
             f"**The prediction the data can check:** thinner traffic → more unscoreable sky. "
-            f"Busiest hour {busiest.hour:%H:%M}Z ({busiest.reports:,} reports) was "
-            f"{busiest.unscoreable_pct:.0f}% unscoreable; quietest {quietest.hour:%H:%M}Z "
-            f"({quietest.reports:,} reports) was {quietest.unscoreable_pct:.0f}%. "
+            f"The cross-day busiest clock hour was {busiest.local_hour:02d}:00 SGT "
+            f"({busiest.reports_mean:,.0f} reports/h), averaging "
+            f"{busiest.unscoreable_mean:.1f}% unscoreable; the quietest was "
+            f"{quietest.local_hour:02d}:00 SGT ({quietest.reports_mean:,.0f} reports/h), "
+            f"averaging {quietest.unscoreable_mean:.1f}%. "
             + (
-                "The trough is blinder, as expected."
-                if quietest.unscoreable_pct >= busiest.unscoreable_pct
-                else "The relationship did not hold this window — recorded, not smoothed."
+                "The traffic trough remains blinder across days."
+                if quietest.unscoreable_mean >= busiest.unscoreable_mean
+                else "The relationship does not hold across days — recorded, not smoothed."
             ),
         ]
-
-    # What the detector mix says about where the next work is. Surfacing this is the whole
-    # point of a multi-day view — a single short window can't show which detector over-fires.
-    totals = {d: sum(r.incidents[d] for r in rows) for d in _DETECTORS}
-    top = max(totals, key=lambda d: totals[d])
-    if totals[top] > 0:
+    else:
         lines += [
             "",
-            "**Detector mix over the span:** "
-            + ", ".join(f"{d} {totals[d]}" for d in _DETECTORS)
-            + f". The **{top}** detector dominates, which — as with the dark-aircraft story — "
-            "reads as an over-firing class to triage next, not a genuine surge: routine "
-            "low-level traffic near the border watch box is the likely explanation, and it is "
-            "the maritime sibling's loitering-false-positive lesson repeating in the air. "
-            "Recorded here as the next investigation, not silently tuned away.",
+            "This has **not** crossed the 48-hour / two-cycle bar. The dated trace below is "
+            "suggestive only; no cross-day stability claim is made.",
+            "",
+            "| UTC date/hour | Reports | Aircraft | Unscoreable | jam | gap | incur | spoof | "
+            "Outage |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
         ]
+        for row in rows:
+            flag = " `*`" if row.outage_minutes >= 5 else ""
+            lines.append(
+                f"| {row.hour:%Y-%m-%d %H:%M} | {row.reports:,} | {row.aircraft} | "
+                f"{row.unscoreable}/{row.cell_windows} ({row.unscoreable_pct:.0f}%) | "
+                f"{row.incidents['jamming']} | {row.incidents['gap']} | "
+                f"{row.incidents['incursion']} | {row.incidents['spoof']} | "
+                f"{row.outage_minutes:.0f}m{flag} |"
+            )
+
+    lines += _detector_mix(rows, span_h)
     return "\n".join(lines)
 
 
@@ -225,14 +316,13 @@ def main() -> None:
             return
         build_tracks(session, args.region)
         session.flush()
-        rows, outage_count = evaluate(session, args.region)
+        rows, outage_count, start, end = evaluate(session, args.region)
         session.rollback()  # read-only: never persist the track rebuild or anything else
 
-    if not rows:
+    if not rows or start is None or end is None:
         print("no data for region", args.region)
         return
-    span_h = (rows[-1].hour - rows[0].hour).total_seconds() / 3600.0 + 1
-    block = render(rows, outage_count, span_h)
+    block = render(rows, outage_count, start, end)
     print("\n" + block)
     if args.write:
         write_eval_md(block)
