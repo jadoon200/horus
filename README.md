@@ -1,5 +1,7 @@
 # HORUS
 
+**Live demo:** https://horus-kc7w.onrender.com (baked synthetic snapshot; run locally for the live lane)
+
 **Air-domain awareness & GNSS-interference monitoring** — turns free ADS-B data into
 source-rated, human-review **air incidents**: GNSS interference (jamming), dark aircraft
 (transponder gaps), zone incursions, kinematic impossibilities, and trajectory anomalies —
