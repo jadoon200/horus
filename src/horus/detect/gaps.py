@@ -10,13 +10,14 @@ overlap a recorded *collector* outage (our own downtime must never be an inciden
 from __future__ import annotations
 
 import math
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from horus.config import Settings, get_settings
-from horus.db.models import CoverageOutage, Incident, Position
+from horus.db.models import CollectorRun, CoverageOutage, Incident, Position
 from horus.detect.base import TECH_DARK, make_incident
 from horus.geo import haversine_km
 from horus.logging import get_logger
@@ -25,8 +26,70 @@ from horus.timeutil import utc_naive
 log = get_logger(__name__)
 
 
+@dataclass(frozen=True)
+class CollectionBoundary:
+    lat: float
+    lon: float
+    radius_nm: int
+    source: str
+
+
+def _collection_boundary(
+    session: Session,
+    position: Position,
+    settings: Settings,
+) -> CollectionBoundary:
+    """Find the run circle that collected a position, or a conservative fallback.
+
+    `seen_pos` correction can put a position just before the run's `started_at`, so the
+    match allows the configured freshness window before start. A completed run's
+    `last_message_at` bounds the other side. If historical rows lack provenance, return the
+    configured circle: `_could_have_left_coverage` only applies it when the position lies
+    inside, so a Baltic point never gets suppressed by Singapore geometry.
+    """
+    ts = utc_naive(position.ts)
+    slack = settings.adsb_max_seen_pos_seconds
+    candidates = session.scalars(
+        select(CollectorRun)
+        .where(
+            CollectorRun.region == position.region,
+            CollectorRun.center_lat.is_not(None),
+            CollectorRun.center_lon.is_not(None),
+            CollectorRun.radius_nm.is_not(None),
+        )
+        .order_by(CollectorRun.started_at.desc())
+    )
+    for run in candidates:
+        start = utc_naive(run.started_at)
+        end_raw = run.last_message_at or run.stopped_at
+        end = utc_naive(end_raw) if end_raw is not None else None
+        if ts < start - timedelta(seconds=slack):
+            continue
+        if end is not None and ts > end:
+            continue
+        assert run.center_lat is not None
+        assert run.center_lon is not None
+        assert run.radius_nm is not None
+        return CollectionBoundary(
+            lat=run.center_lat,
+            lon=run.center_lon,
+            radius_nm=run.radius_nm,
+            source=f"collector-run:{run.id}",
+        )
+    return CollectionBoundary(
+        lat=settings.adsb_center_lat,
+        lon=settings.adsb_center_lon,
+        radius_nm=settings.adsb_radius_nm,
+        source="config-fallback",
+    )
+
+
 def _could_have_left_coverage(
-    lat: float, lon: float, gs_kt: float | None, gap_minutes: float, s: Settings
+    lat: float,
+    lon: float,
+    gs_kt: float | None,
+    gap_minutes: float,
+    boundary: CollectionBoundary,
 ) -> bool:
     """Could the aircraft have flown out of the collection circle and back in this gap?
 
@@ -45,22 +108,16 @@ def _could_have_left_coverage(
     if speed <= 0:
         return False
     # Distance to the boundary, in nautical miles, from the collection centre.
-    dlat_nm = (lat - s.adsb_center_lat) * 60.0
-    dlon_nm = (
-        (lon - s.adsb_center_lon) * 60.0 * math.cos(math.radians((lat + s.adsb_center_lat) / 2))
-    )
+    dlat_nm = (lat - boundary.lat) * 60.0
+    dlon_nm = (lon - boundary.lon) * 60.0 * math.cos(math.radians((lat + boundary.lat) / 2))
     from_centre = math.hypot(dlat_nm, dlon_nm)
-    # The configured circle is Singapore's by default, but region-parameterised collection
-    # (V2) can populate the database from anywhere. If the position sits outside the
-    # configured circle, this circle is demonstrably not the one that collected the data, so
-    # its boundary math is inapplicable — fail OPEN (keep the call for human review) rather
-    # than suppress. Suppressing here silently dropped every dark-aircraft call over any
-    # non-default region, because `to_boundary` clamps to 0 and the aircraft is always
-    # judged able to have left. A per-region collection boundary is the proper long-term
-    # fix; until then, only suppress where the config boundary provably applies.
-    if from_centre > s.adsb_radius_nm:
+    # A recorded boundary is applicable only to positions inside it. Bad historical
+    # provenance or the conservative config fallback can put a position outside the circle;
+    # fail OPEN (keep the call for review) rather than clamp the distance and silently
+    # suppress it as able to leave.
+    if from_centre > boundary.radius_nm:
         return False
-    to_boundary = s.adsb_radius_nm - from_centre
+    to_boundary = boundary.radius_nm - from_centre
     # Out and back at its own cruise speed, in minutes.
     round_trip_minutes = 2.0 * (to_boundary / speed) * 60.0
     return gap_minutes >= round_trip_minutes
@@ -106,7 +163,14 @@ def detect_gaps(
             descending = (prev.baro_rate_fpm or 0.0) < s.gap_max_descent_fpm
             # Long enough to have left the collection circle and returned = our boundary,
             # not the aircraft's behaviour.
-            left_coverage = _could_have_left_coverage(prev.lat, prev.lon, prev.gs_kt, gap_min, s)
+            boundary = _collection_boundary(session, prev, s)
+            left_coverage = _could_have_left_coverage(
+                prev.lat,
+                prev.lon,
+                prev.gs_kt,
+                gap_min,
+                boundary,
+            )
             if (
                 gap_min >= s.gap_min_minutes
                 and displacement >= s.gap_min_displacement_km
@@ -138,6 +202,7 @@ def detect_gaps(
                             "altitude_floor_ft": s.gap_min_altitude_ft,
                             "vertical_rate_fpm": prev.baro_rate_fpm,
                             "ground_speed_kt": prev.gs_kt,
+                            "coverage_boundary_source": boundary.source,
                             "caveat": "a gap may be benign coverage loss; graded, not judged",
                         },
                         # The data's own region, not the query filter: an unscoped run

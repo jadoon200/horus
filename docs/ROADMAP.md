@@ -51,6 +51,7 @@ Honest status ledger — ✅ built & gated, 🔨 in progress, ⬜ planned.
 | V18 | Spoof-threshold characterization over consecutive real fixes | ✅ 123,649 pairs; three >1,400-kt discontinuities form one review candidate; lowering to 750 kt adds nothing, so 1,400 kt retained |
 | V19 | Incursion-airway residual source spike | ✅ stopped at the data gate: OpenAIP has no ATS-route geometry; authoritative AIP reuse is not licence-compatible, so no geometry was fabricated and the confound remains disclosed |
 | V20 | Optional OpenSky receiver-coverage cross-check | ✅ terms-acknowledged one-shot adapter + source-isolated persistence + cell comparison; never operational/deployed; state vectors lack NIC/NACp/SIL, so coverage potential cannot strengthen jamming evidence |
+| V21 | Per-region collection-boundary provenance | ✅ migration + per-run region/centre/radius; gap coverage-exit uses the circle that collected the report, historical unknowns fail open |
 
 **Live:** https://horus-kc7w.onrender.com (Render free tier, baked synthetic snapshot; keep-alive pings `/health`).
 
