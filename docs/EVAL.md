@@ -162,6 +162,39 @@ regional codes (2000/1200) never fire. Even a confirmed visit remains C-grade ev
 codes can be selected in error, and HORUS reports the broadcast for human review rather
 than interpreting it as a hijack, radio failure, or emergency verdict.
 
+## Reliability-grade calibration against real-traffic proxies (2026-07-25)
+
+Across **123,998 reports**, **1235 aircraft**, and **43.53 hours**, the deterministic detectors
+produced **51 incidents** in the three classes with a usable plausibility proxy. These are proxies,
+not labels or operational ground truth.
+
+| Detector | Grade | More plausible | Unclear | Less plausible | Total |
+|---|:---:|---:|---:|---:|---:|
+| gap | C | 4 | 2 | 7 | 13 |
+| gap | D | 1 | 3 | 13 | 17 |
+| incursion | C | 1 | 0 | 18 | 19 |
+| jamming | C | 0 | 0 | 2 | 2 |
+
+The proxies are intentionally legible:
+
+- **Gap:** the weakest margin above the configured 10-minute / 50-km detector floors (≤1.5x less
+  plausible, ≥2x more plausible). This partially overlaps the grade's duration rule, so it is a
+  sanity check rather than independent validation.
+- **Incursion:** likely routine airliner versus likely GA/rotorcraft from the advisory type code
+  (registration-only fallback is explicitly weaker). This tests whether the fixed C grade
+  distinguishes the residual airway confound.
+- **Jamming:** aircraft corroborating the cell (minimum-count cells less plausible, ≥2x the minimum
+  more plausible). This is circular with the sample-count grade and therefore cannot independently
+  validate it.
+
+For gaps, D-grade calls were less plausible by the margin proxy in 13/17 cases versus 7/13 C-grade
+calls. Incursion grades had no discriminating power: every call received the same grade, even though
+the aircraft-class proxy separated routine airliners from GA/rotorcraft. Jamming grades also had no
+within-sample discrimination, and the corroboration proxy is the grade rule itself, so agreement
+would be circular. **Bottom line:** the letter is a useful evidence-quality cue for gaps, but it is
+not calibrated across detector classes and must not be read as a probability. For one-grade
+detectors it is presently descriptive rather than discriminating.
+
 ## Flagship anomaly model, decided on real tracks (2026-07-24)
 
 The synthetic gold set could not settle this and said so: there, two perfectly circular

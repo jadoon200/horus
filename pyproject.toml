@@ -66,5 +66,7 @@ module = [
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+# Include the repo root so evaluation scripts can expose small, unit-tested pure helpers
+# without pretending that operational CLI tooling belongs in the installable package.
+pythonpath = ["src", "."]
 testpaths = ["tests"]
