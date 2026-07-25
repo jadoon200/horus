@@ -126,3 +126,15 @@ def test_dedup_lookup_is_bounded_but_still_catches_duplicates() -> None:
         assert persist_samples(db, [s1], source="adsb-lol", region="sg") == 0
         db.commit()
         assert db.scalar(select(func.count()).select_from(Position)) == 2
+
+
+def test_dedup_keeps_sources_and_regions_independent() -> None:
+    """A same-second cross-check must coexist without displacing the keyless lane."""
+    sample = parse_aircraft(_GOOD, _NOW, max_seen_pos_seconds=60)
+    assert sample is not None
+    with _session() as db:
+        assert persist_samples(db, [sample], source="adsb-lol", region="sg-live") == 1
+        db.commit()
+        assert persist_samples(db, [sample], source="opensky", region="sg-opensky-research") == 1
+        db.commit()
+        assert db.scalar(select(func.count()).select_from(Position)) == 2

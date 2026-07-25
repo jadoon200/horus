@@ -26,6 +26,20 @@ class Settings(BaseSettings):
     # a coasted estimate, not a fresh report.
     adsb_max_seen_pos_seconds: float = 60.0
 
+    # --- Optional OpenSky research cross-check -----------------------------------------
+    # This is NEVER part of the operational collector or deployed demo. OpenSky's current
+    # terms require a written agreement for operational REST use; HORUS only exposes a
+    # user-invoked, terms-acknowledged research snapshot. Anonymous latest-state access is
+    # supported. OAuth client credentials increase the daily research quota when supplied.
+    opensky_api_url: str = "https://opensky-network.org/api"
+    opensky_token_url: str = (
+        "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
+    )
+    opensky_client_id: str = ""
+    opensky_client_secret: str = ""
+    opensky_source_label: str = "opensky"
+    opensky_max_position_age_seconds: float = 60.0
+
     # --- Track building ----------------------------------------------------------------
     # A new track (flight segment) starts when an aircraft is silent longer than this.
     track_gap_minutes: float = 15.0

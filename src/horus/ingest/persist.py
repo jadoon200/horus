@@ -1,9 +1,11 @@
 """Idempotent persistence for ADS-B samples.
 
 Re-polling overlapping snapshots is the normal case (every poll re-reports slow-moving
-state), so persistence must dedup on (icao24, ts) — timezone-safely, because SQLite
-round-trips aware datetimes as naive clock fields (see horus.timeutil, a lesson inherited
-from the PHAROS pilot).
+state), so persistence must dedup on (icao24, ts, source, region) — timezone-safely,
+because SQLite round-trips aware datetimes as naive clock fields (see horus.timeutil, a
+lesson inherited from the PHAROS pilot). Source + region are part of identity so an
+optional cross-check can coexist without contaminating or silently displacing the primary
+keyless lane.
 """
 
 from __future__ import annotations
@@ -51,8 +53,8 @@ def persist_samples(
 ) -> int:
     """Insert new positions (and upsert aircraft identity); returns rows inserted.
 
-    Dedup: one position per (icao24, second-resolution ts). Existing keys are read back
-    tz-normalized so the check holds on SQLite and Postgres alike.
+    Dedup: one position per (icao24, second-resolution ts, source, region). Existing keys
+    are read back tz-normalized so the check holds on SQLite and Postgres alike.
     """
     batch = list(samples)
     if not batch:
@@ -65,17 +67,17 @@ def persist_samples(
     lo = min(s.ts for s in batch) - _DEDUP_MARGIN
     hi = max(s.ts for s in batch) + _DEDUP_MARGIN
     existing = {
-        (icao, utc_naive(ts).replace(microsecond=0))
-        for icao, ts in session.execute(
-            select(Position.icao24, Position.ts).where(
+        (icao, utc_naive(ts).replace(microsecond=0), stored_source, stored_region)
+        for icao, ts, stored_source, stored_region in session.execute(
+            select(Position.icao24, Position.ts, Position.source, Position.region).where(
                 Position.icao24.in_(icaos), Position.ts >= lo, Position.ts <= hi
             )
         )
     }
     inserted = 0
-    seen_in_batch: set[tuple[str, object]] = set()
+    seen_in_batch: set[tuple[str, object, str, str | None]] = set()
     for s in batch:
-        key = (s.icao24, utc_naive(s.ts).replace(microsecond=0))
+        key = (s.icao24, utc_naive(s.ts).replace(microsecond=0), source, region)
         if key in existing or key in seen_in_batch:
             continue
         seen_in_batch.add(key)

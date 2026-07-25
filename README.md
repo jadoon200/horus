@@ -16,7 +16,7 @@ fused into a composite air picture over the Singapore FIR neighbourhood.
 > **Status: core system built, gated, and exercised on real ADS-B.** Collection, track
 > building, the six-detector battery (GNSS-interference flagship), the composite air
 > picture, the honest eval harness, the read-only API + ARGUS evidence bridge, and the
-> explainer-first React/Leaflet dashboard are all in place — 72 tests, mypy strict,
+> explainer-first React/Leaflet dashboard are all in place — 78 tests, mypy strict,
 > browser-verified. A first live 12.5-minute Singapore window (54 aircraft, 796 reports)
 > raised **zero false positives** and confirmed the NIC baseline on real traffic, while
 > exposing the method's real bound: **83.3% of cells were too sparse to score**. Numbers,
@@ -57,7 +57,8 @@ detectors, then fuse them into a composite per-aircraft/area air-threat picture:
 [adsb.lol](https://api.adsb.lol/) (keyless community ADS-B API, readsb schema incl.
 NIC/NACp/SIL) · a deterministic labelled synthetic generator (the offline gold set — a
 ceiling, not a capability claim) · [OpenSky Network](https://opensky-network.org/)
-(optional, later).
+(optional, terms-acknowledged one-shot receiver-coverage research only; never a runtime
+dependency).
 
 ## Stack
 
@@ -90,6 +91,12 @@ The residual low-airway incursion confound is intentionally not tuned away. A so
 found that [OpenAIP](https://www.openaip.net/) does not publish ATS-route centreline
 geometry, while the authoritative regional AIP route tables do not grant licence-compatible
 automated reuse. HORUS ships no hand-drawn airway and keeps those calls in human review.
+
+An optional OpenSky adapter compares one latest-state snapshot against adsb.lol after
+explicit terms acknowledgement. It is source/region-isolated and never scheduled or
+deployed: current OpenSky terms require an agreement for operational API use, and its state
+vectors omit NIC/NACp/SIL, so it can measure receiver coverage but cannot strengthen the
+GNSS-interference evidence.
 
 ## Quickstart
 
