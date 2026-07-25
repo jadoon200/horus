@@ -86,6 +86,11 @@ real fix pairs, only three exceeded 750 kt, all three exceeded 1,400 kt, and all
 same repeated-discontinuity review candidate. Lowering the threshold would add no evidence,
 so the physical-impossibility margin stays at 1,400 kt.
 
+The residual low-airway incursion confound is intentionally not tuned away. A source spike
+found that [OpenAIP](https://www.openaip.net/) does not publish ATS-route centreline
+geometry, while the authoritative regional AIP route tables do not grant licence-compatible
+automated reuse. HORUS ships no hand-drawn airway and keeps those calls in human review.
+
 ## Quickstart
 
 ```bash

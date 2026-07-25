@@ -162,6 +162,33 @@ regional codes (2000/1200) never fire. Even a confirmed visit remains C-grade ev
 codes can be selected in error, and HORUS reports the broadcast for human review rather
 than interpreting it as a hijack, radio failure, or emergency verdict.
 
+## Incursion-airway source spike — stopped at the data gate (2026-07-25)
+
+The post-triage incursion residual is dominated by regional airliners using the low
+inter-island airway through the illustrative Riau watch box. An airway exclusion would be
+defensible only from a current, authoritative centreline/vertical-limit source that can be
+retrieved and redistributed with this project. The source spike found no such input:
+
+- **OpenAIP** is free and publishes its data under CC BY-NC 4.0, but its documented API and
+  daily export object types cover airports, airspaces, navaids, obstacles, reporting points
+  and related objects — not ATS route/airway centreline geometry. Its airspace polygons
+  cannot be substituted for an airway.
+- **Singapore AIP ENR 3.1/3.2** is the authoritative, current, keyless publication and does
+  contain route points, lower limits and lateral limits. CAAS's Terms of Use (last updated
+  9 May 2026), however, prohibit automated acquisition, copying, storage, redistribution
+  and derivative works without written permission. HORUS therefore cannot scrape those
+  tables into an MIT-repository geometry registry.
+- The watch box crosses a national boundary, so a Singapore-only extraction would not be a
+  complete source for the Indonesian side in any case. Combining hand-copied points from
+  differently licensed AIPs would be neither maintainable nor licence-clear.
+
+**Decision:** no airway geometry was created and no incident was suppressed. The residual
+remains **data-bounded**: routine regional-airliner traffic is disclosed as a confounder and
+left for human review. A future implementation requires either an openly licensed ATS-route
+dataset that covers the whole box or written reuse permission from the relevant AIS
+publishers. Coarse hand-drawn geometry would make the detector look cleaner by inventing
+authority it does not have.
+
 ## Spoof-threshold characterization on real fixes (2026-07-25)
 
 Across **124,886 reports**, **1,237 aircraft**, and **43.72 hours**, there were **123,649** valid
