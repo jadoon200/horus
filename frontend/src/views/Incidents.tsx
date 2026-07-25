@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api, reliabilityMeta, type Incident } from '../api'
 
-const DETECTORS = ['all', 'jamming', 'gap', 'incursion', 'spoof', 'anomaly'] as const
+const DETECTORS = ['all', 'jamming', 'gap', 'incursion', 'spoof', 'squawk', 'anomaly'] as const
 
 function IncidentCard({ i }: { i: Incident }) {
   const [open, setOpen] = useState(false)

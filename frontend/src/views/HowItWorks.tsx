@@ -47,7 +47,7 @@ export default function HowItWorks() {
         <div className="pipe-arrow">→</div>
         <div className="pipe-step">
           <b>4 · Detect</b>
-          <span>Five detectors, each owning one threat signature (below).</span>
+          <span>Six detectors, each owning one threat signature (below).</span>
         </div>
         <div className="pipe-arrow">→</div>
         <div className="pipe-step">
@@ -59,7 +59,7 @@ export default function HowItWorks() {
         </div>
       </div>
 
-      <h2>The five detectors</h2>
+      <h2>The six detectors</h2>
       <div className="det-card flagship">
         <h4>GNSS interference — the flagship</h4>
         <p>
@@ -108,9 +108,9 @@ export default function HowItWorks() {
       <div className="det-card">
         <h4>Low-level watch-box incursion</h4>
         <p>
-          Sustained low-altitude presence (≥3 samples below 10,000 ft) inside a curated
-          border watch box. High-altitude overflight of the same box is ordinary airline
-          traffic and is ignored.
+          A contiguous, roughly level visit below 5,000 ft inside a curated border watch
+          box. Climbing/descending terminal traffic and high-altitude overflight are
+          excluded rather than dressed up as suspicious crossings.
         </p>
         <p className="caveat">
           Watch rings are coarse, illustrative rectangles — never authoritative airspace
@@ -123,6 +123,19 @@ export default function HowItWorks() {
           Implied speed between consecutive fixes above 1,400 kt, at least three times.
           Two positions that fast apart cannot both be genuine — the signature of two
           transmitters sharing one ICAO address, injected data, or feed corruption.
+        </p>
+      </div>
+      <div className="det-card">
+        <h4>Emergency squawk — notable event</h4>
+        <p>
+          Repeated aircraft self-reports of <code>7500</code>, <code>7600</code>, or{' '}
+          <code>7700</code> are grouped into one time-scoped visit and surfaced quietly for
+          review. One sample is ignored, and ordinary regional codes such as 2000/1200 never
+          fire.
+        </p>
+        <p className="caveat">
+          A squawk is not a diagnosis: codes can be selected in error, so the event stays
+          C-grade single-aircraft evidence and is never labelled “hijack detected.”
         </p>
       </div>
       <div className="det-card">

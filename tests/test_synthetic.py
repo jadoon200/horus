@@ -16,7 +16,7 @@ def test_generation_is_deterministic() -> None:
 def test_scenario_contains_every_label_kind_and_confounders() -> None:
     data = generate()
     kinds = {label.kind for label in data.labels}
-    assert kinds == {"jamming", "gap", "incursion", "spoof", "anomaly"}
+    assert kinds == {"jamming", "gap", "incursion", "spoof", "squawk", "anomaly"}
 
     # The jamming window really degrades a *cluster* of aircraft inside the cell...
     jam = next(label for label in data.labels if label.kind == "jamming")
@@ -45,6 +45,11 @@ def test_scenario_contains_every_label_kind_and_confounders() -> None:
     gap = next(x for x in data.labels if x.kind == "gap" and x.icao24 == "d00001")
     assert all(not (gap.ts_start <= s.ts < gap.ts_end) for s in dark)
     assert all((s.alt_baro_ft or 0) > 10_000 for s in dark)
+
+    # Emergency squawk: repeated 7700 on exactly one aircraft; ordinary 2000 dominates.
+    emergency = [s for s in data.samples if s.squawk in {"7500", "7600", "7700"}]
+    assert len(emergency) == 4
+    assert {s.icao24 for s in emergency} == {"a00000"}
 
 
 def test_jam_cell_sits_inside_watch_corridor() -> None:

@@ -97,6 +97,12 @@ class Settings(BaseSettings):
     # means the fixes can't both be real (teleporting identity / bad data / spoof).
     spoof_max_speed_kt: float = 1_400.0
 
+    # --- Emergency squawk notable-event channel ----------------------------------------
+    # These are aircraft self-reports, not verdicts. In particular 7500 can be selected in
+    # error, so require repeated samples and keep the evidence grade at C.
+    squawk_emergency_codes: tuple[str, ...] = ("7500", "7600", "7700")
+    squawk_min_samples: int = 2
+
     # --- Flagship anomaly model (served) ------------------------------------------------
     # Optional SHA-256 pin for the frozen GRU artifact `/score-track` loads. When set, a
     # mismatch is reported and scoring is refused so a served model cannot silently drift

@@ -14,9 +14,9 @@ fused into a composite air picture over the Singapore FIR neighbourhood.
 > Named for the falcon-eyed sky god (a deliberate pair with PHAROS's Alexandrian lighthouse).
 
 > **Status: core system built, gated, and exercised on real ADS-B.** Collection, track
-> building, the five-detector battery (GNSS-interference flagship), the composite air
+> building, the six-detector battery (GNSS-interference flagship), the composite air
 > picture, the honest eval harness, the read-only API + ARGUS evidence bridge, and the
-> explainer-first React/Leaflet dashboard are all in place — 65 tests, mypy strict,
+> explainer-first React/Leaflet dashboard are all in place — 67 tests, mypy strict,
 > browser-verified. A first live 12.5-minute Singapore window (54 aircraft, 796 reports)
 > raised **zero false positives** and confirmed the NIC baseline on real traffic, while
 > exposing the method's real bound: **83.3% of cells were too sparse to score**. Numbers,
@@ -47,7 +47,9 @@ detectors, then fuse them into a composite per-aircraft/area air-threat picture:
 3. **Zone incursion** — entry into coarse, curated watch boxes (never authoritative
    airspace geometry).
 4. **Kinematic impossibility / spoof** — implied speeds no civil aircraft can fly.
-5. **Trajectory anomaly** — a GRU sequence autoencoder over ordered track shape
+5. **Emergency squawk** — repeated 7500/7600/7700 self-reports as modest, C-grade notable
+   events; never an automated interpretation of what the code means operationally.
+6. **Trajectory anomaly** — a GRU sequence autoencoder over ordered track shape
    (the PHAROS flagship design, re-proven on air tracks against fair baselines).
 
 ## Data sources (all free)
