@@ -111,6 +111,9 @@ make check                                          # ruff + mypy strict + pytes
 make up                                             # Postgres (host port 5435) + migrations
 ```
 
+The dedicated `horus` environment is the supported development path; `make check` is
+self-contained and runs the same scoped ruff, strict-mypy, and 81-test gate as CI.
+
 ## Deploy
 
 A single free container (`Dockerfile.web` + `render.yaml`, the sibling pattern) builds the

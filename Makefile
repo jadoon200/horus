@@ -2,20 +2,22 @@
 
 # One-time: create the conda env, then `conda activate horus`
 env:
-	conda create -y -n horus python=3.12
+	conda create -y -n horus python=3.12 pip
 
 # Run inside the activated horus env. Torch powers the flagship GRU on every platform.
 install:
-	pip install -r requirements-dev.txt && pip install -e .
+	python -m pip install -r requirements-dev.txt
+	python -m pip install -e .
 
 lint:
-	ruff check . && ruff format --check .
+	PYTHONPATH=src ruff check src tests scripts
+	PYTHONPATH=src ruff format --check src tests scripts
 
 typecheck:
-	mypy
+	PYTHONPATH=src mypy src/horus
 
 test:
-	pytest -q
+	PYTHONPATH=src python -m pytest -q
 
 check: lint typecheck test
 
