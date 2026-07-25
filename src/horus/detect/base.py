@@ -12,7 +12,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from horus.db.models import Incident
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from horus.db.models import Incident, Position
 from horus.zones import zone_for
 
 # Air-threat technique tags — the ATT&CK analogue for the air domain (portfolio-local
@@ -53,6 +56,45 @@ def grade_samples(n_aircraft: int, *, at_altitude: bool = True) -> str:
     if not at_altitude and grade < "E":
         grade = chr(ord(grade) + 1)
     return grade
+
+
+def latest_positions_before(
+    session: Session, since: datetime, region: str | None
+) -> dict[str, Position]:
+    """Each in-window aircraft's newest report strictly before `since` — the pair seed.
+
+    The pair-based detectors (gap, spoof) compare consecutive fixes. A window-scoped scan
+    that loads only `ts >= since` can never form the pair that straddles the boundary, yet
+    that pair is exactly where a silence *closing* inside the window — the first moment it
+    is detectable at all — or a violation streak crossing the boundary lives. Seeding each
+    aircraft with its last pre-boundary report makes those pairs derivable without loading
+    the corpus.
+    """
+    targets_q = select(Position.icao24).where(Position.ts >= since).distinct()
+    if region:
+        targets_q = targets_q.where(Position.region == region)
+    targets = set(session.scalars(targets_q))
+    if not targets:
+        return {}
+    newest = (
+        select(Position.icao24, func.max(Position.ts).label("ts"))
+        .where(Position.ts < since, Position.icao24.in_(targets))
+        .group_by(Position.icao24)
+    )
+    if region:
+        newest = newest.where(Position.region == region)
+    sub = newest.subquery()
+    rows = session.scalars(
+        select(Position).join(sub, (Position.icao24 == sub.c.icao24) & (Position.ts == sub.c.ts))
+    )
+    seeds: dict[str, Position] = {}
+    for row in rows:
+        # The join is by (aircraft, timestamp); a same-instant report from another dataset
+        # slice must not become another slice's seed.
+        if region and row.region != region:
+            continue
+        seeds.setdefault(row.icao24, row)
+    return seeds
 
 
 def make_incident(

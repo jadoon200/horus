@@ -197,6 +197,117 @@ def test_every_detector_id_is_time_scoped() -> None:
             )
 
 
+def test_incremental_detects_a_gap_straddling_the_refresh_boundary() -> None:
+    """A silence that opens before `since` but closes inside the window must be found.
+
+    The reappearance is the first moment a gap is detectable at all, so the window scan
+    (`ts >= since`) has to reach back for the last pre-boundary report to form the pair.
+    Before the seed, a silence longer than the refresh window — the longest, most
+    interesting kind — was invisible to the incremental lane, because its opening report
+    was never loaded. The re-derived id matches the full scan's, so successive refreshes
+    update the same row instead of duplicating it.
+    """
+    from horus.detect.gaps import detect_gaps
+
+    with _session() as s:
+        since = datetime(2026, 7, 23, 6, 0, tzinfo=UTC)
+        s.add(Aircraft(icao24="d00099"))
+        # Slow and central: the aircraft could not have left the 250 nm coverage circle in
+        # a 13-minute gap, so coverage never explains this silence away.
+        s.add(
+            Position(
+                icao24="d00099",
+                ts=since - timedelta(minutes=4),  # last seen BEFORE the window
+                lat=1.35,
+                lon=103.82,
+                alt_baro_ft=37000.0,
+                gs_kt=120.0,
+                baro_rate_fpm=0.0,
+                region="r",
+            )
+        )
+        s.add(
+            Position(
+                icao24="d00099",
+                ts=since + timedelta(minutes=9),  # reappears INSIDE the window, 60 km east
+                lat=1.35,
+                lon=104.36,
+                alt_baro_ft=37000.0,
+                gs_kt=120.0,
+                baro_rate_fpm=0.0,
+                region="r",
+            )
+        )
+        s.commit()
+
+        full = [i.incident_id for i in detect_gaps(s, "r")]
+        windowed = [i.incident_id for i in detect_gaps(s, "r", since=since.replace(tzinfo=None))]
+        assert full, "the full scan must see the gap for this to test anything"
+        assert windowed == full, "the boundary-straddling gap must survive the window scope"
+
+
+def test_incremental_does_not_duplicate_events_straddling_the_boundary() -> None:
+    """A spoof streak or incursion visit crossing `since` must update its row, not clone it.
+
+    Both events carry a stable, time-scoped id anchored to their first sample. Deriving from
+    the window alone re-anchored that id to whatever fell inside the rolling window, minting
+    a fresh id beside the stored one — one duplicate every time the boundary swept across the
+    event. The scoped detectors now re-derive from full history for any aircraft active in the
+    window, and the refresh replaces by id, so the incremental result equals a full rebuild.
+    """
+    from sqlalchemy import delete
+
+    from horus.db.models import Incident
+    from horus.detect.run import run_detectors
+    from horus.tracks.incremental import refresh_recent_incidents
+
+    with _session() as s:
+        t0 = datetime(2026, 7, 23, 11, 50, tzinfo=UTC)
+        s.add(Aircraft(icao24="f00bad"))
+        s.add(Aircraft(icao24="e00001"))
+        for k in range(20):
+            s.add(  # teleporting identity: every consecutive fix is impossible
+                Position(
+                    icao24="f00bad",
+                    ts=t0 + timedelta(minutes=k),
+                    lat=1.2 if k % 2 == 0 else 3.9,
+                    lon=103.6 if k % 2 == 0 else 104.4,
+                    alt_baro_ft=35000.0,
+                    region="r",
+                )
+            )
+            s.add(  # sustained low, level flight inside the Riau border box
+                Position(
+                    icao24="e00001",
+                    ts=t0 + timedelta(minutes=k),
+                    lat=0.9,
+                    lon=104.2,
+                    alt_baro_ft=1800.0,
+                    baro_rate_fpm=0.0,
+                    region="r",
+                )
+            )
+        s.commit()
+
+        settings = Settings(_env_file=None)  # type: ignore[call-arg]
+        run_detectors(s, "r")
+        s.commit()
+        full = sorted(i.incident_id for i in s.scalars(select(Incident)))
+        s.execute(delete(Incident))
+        s.commit()
+
+        # Shrinking windows are the adversarial order: each sweeps the boundary back across
+        # the still-open events.
+        anchor = t0 + timedelta(minutes=25)
+        for minutes_back in (10_000, 60, 30, 20, 10, 5):
+            since = (anchor - timedelta(minutes=minutes_back)).replace(tzinfo=None)
+            refresh_recent_incidents(s, since=since, region="r", settings=settings)
+            s.commit()  # an unstable id would raise IntegrityError here
+
+        incremental = sorted(i.incident_id for i in s.scalars(select(Incident)))
+        assert incremental == full, "the incremental lane must match a full rebuild exactly"
+
+
 def test_refresh_survives_a_bucket_straddling_its_boundary() -> None:
     """A jamming bucket straddling `since` must not collide with its stored incident.
 

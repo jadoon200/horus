@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from horus.config import Settings, get_settings
 from horus.db.models import CollectorRun, CoverageOutage, Incident, Position
-from horus.detect.base import TECH_DARK, make_incident
+from horus.detect.base import TECH_DARK, latest_positions_before, make_incident
 from horus.geo import haversine_km
 from horus.logging import get_logger
 from horus.timeutil import utc_naive
@@ -136,10 +136,14 @@ def detect_gaps(
 ) -> list[Incident]:
     """Dark-aircraft candidates.
 
-    `since` scopes the scan for the incremental lane. A gap's `ts_start` is the last report
-    *before* the silence, so restricting input positions to `ts >= since` yields exactly the
-    incidents that start inside the window — a gap opening earlier is correctly excluded
-    rather than half-seen, because it is already stored and unchanged.
+    `since` scopes the scan for the incremental lane to gaps that CLOSE at or after the
+    boundary. The reappearance is the first moment a gap is detectable at all, so a silence
+    opening before `since` cannot simply be skipped as "already stored" — it never was.
+    Each in-window aircraft is therefore seeded with its last pre-boundary report, which
+    makes the straddling pair derivable; before the seed existed, silences longer than the
+    refresh window (the longest, most interesting ones) were exactly the ones the
+    incremental lane could never see. A gap that closed before `since` is settled: its
+    stored incident is unchanged, and its pair is no longer derivable here.
     """
     s = get_settings()
     q = select(Position).order_by(Position.icao24, Position.ts)
@@ -148,10 +152,13 @@ def detect_gaps(
     if since is not None:
         q = q.where(Position.ts >= since)
     outages = _outage_windows(session)
+    seeds = latest_positions_before(session, since, region) if since is not None else {}
 
     incidents: list[Incident] = []
     prev: Position | None = None
     for p in session.scalars(q):
+        if prev is None or prev.icao24 != p.icao24:
+            prev = seeds.get(p.icao24)
         if prev is not None and prev.icao24 == p.icao24:
             t0, t1 = utc_naive(prev.ts), utc_naive(p.ts)
             gap_min = (t1 - t0).total_seconds() / 60.0

@@ -68,6 +68,87 @@ def test_geojson_endpoints(client: TestClient) -> None:
     assert client.get("/aircraft/zzzzzz/track").status_code == 404
 
 
+def test_tracks_do_not_merge_positions_across_regions() -> None:
+    """One ICAO24 can appear under two regions (a live slice and an OpenSky-research one).
+
+    The track was gap-split within its own region, so its rendered geometry must contain only
+    that region's fixes. Without the region filter the LineString merged both regions and
+    zig-zagged across the map — the exact provenance mistake tracks/build.py warns about.
+
+    Self-contained (its own DB): the shared fixture seeds synthetic data, and this needs one
+    aircraft deliberately present in two regions at the same instants.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from horus.db.models import Aircraft, Position, Track
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine)
+    base = datetime(2026, 7, 24, 9, 0, tzinfo=UTC)
+    with Session(engine) as s:
+        s.add(Aircraft(icao24="beef01"))
+        for m in range(5):
+            s.add(
+                Position(
+                    icao24="beef01",
+                    ts=base + timedelta(minutes=m),
+                    lat=1.30,
+                    lon=103.80 + 0.01 * m,
+                    alt_baro_ft=35000.0,
+                    region="sg-live",
+                )
+            )
+            s.add(  # same aircraft, same instants, a different region far away
+                Position(
+                    icao24="beef01",
+                    ts=base + timedelta(minutes=m),
+                    lat=54.90,
+                    lon=20.50 + 0.01 * m,
+                    alt_baro_ft=35000.0,
+                    region="sg-opensky-research",
+                )
+            )
+        s.add(
+            Track(
+                track_id="beef01:merge-test",
+                icao24="beef01",
+                region="sg-live",
+                start_ts=base,
+                end_ts=base + timedelta(minutes=4),
+                point_count=5,
+            )
+        )
+        s.commit()
+
+    def _override() -> Iterator[Session]:
+        db = factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    previous = app.dependency_overrides.get(get_db)
+    app.dependency_overrides[get_db] = _override
+    try:
+        with TestClient(app) as c:
+            fc = c.get("/tracks").json()
+    finally:
+        # Restore, never blindly clear: the module-scoped `client` fixture's override must
+        # survive for the other tests in this file.
+        if previous is not None:
+            app.dependency_overrides[get_db] = previous
+        else:
+            app.dependency_overrides.pop(get_db, None)
+
+    feature = next(f for f in fc["features"] if f["properties"]["track_id"] == "beef01:merge-test")
+    coords = feature["geometry"]["coordinates"]
+    assert len(coords) == 5, "only the track's own region's fixes belong to it"
+    assert all(lat < 10 for _lon, lat in coords), "no Baltic fixes may leak into an SG track"
+
+
 def test_air_picture_and_evidence_shape(client: TestClient) -> None:
     picture = client.get("/air-picture").json()
     assert picture["areas"] and picture["aircraft"]
