@@ -67,6 +67,10 @@ detect:
 eval:
 	python -m horus.eval.run
 
+# Diurnal evaluation over the accumulated live lane (read-only) → docs/EVAL.md.
+eval-multiday:
+	python -m scripts.eval_multiday --write
+
 # Read-only FastAPI + GeoJSON endpoints on :8000.
 api:
 	uvicorn horus.api.app:app --host 127.0.0.1 --port 8000
