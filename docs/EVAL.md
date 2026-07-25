@@ -162,6 +162,52 @@ regional codes (2000/1200) never fire. Even a confirmed visit remains C-grade ev
 codes can be selected in error, and HORUS reports the broadcast for human review rather
 than interpreting it as a hijack, radio failure, or emergency verdict.
 
+## Spoof-threshold characterization on real fixes (2026-07-25)
+
+Across **124,886 reports**, **1,237 aircraft**, and **43.72 hours**, there were **123,649** valid
+consecutive same-aircraft fix pairs after nonpositive timestamp deltas were excluded. Real traffic
+has no spoof labels, so this characterizes the benign tail; it does not measure recall.
+
+| Implied speed (kt) | Consecutive-fix pairs |
+|---:|---:|
+| 0-250 | 17,526 |
+| 250-500 | 103,161 |
+| 500-750 | 2,959 |
+| 750-1,000 | 0 |
+| 1,000-1,200 | 0 |
+| 1,200-1,400 | 0 |
+| 1,400-2,000 | 2 |
+| 2,000-5,000 | 1 |
+| ≥5,000 | 0 |
+
+| Tail statistic | Implied speed (kt) |
+|---|---:|
+| p50 | 391.7 |
+| p90 | 473.9 |
+| p99 | 508.2 |
+| p99.9 | 524.8 |
+| maximum | 2,013.8 |
+
+| Candidate ceiling | Violating pairs | Aircraft | ≥3-pair candidates |
+|---:|---:|---:|---:|
+| 750 kt | 3 | 1 | 1 |
+| 1,000 kt | 3 | 1 | 1 |
+| 1,200 kt | 3 | 1 | 1 |
+| 1,400 kt | 3 | 1 | 1 |
+
+**Benign-tail clues above 750 kt:** 3 pairs total; 0 combine a ≤10-second interval with ≤10 km
+movement (short-interval position jitter), 3 jump ≥25 km inside two minutes (feed/coverage-seam
+shape), and 3 conflict with a contemporaneous reported ground speed ≤650 kt. These clues can overlap
+and are diagnostics, not cause labels.
+
+**Decision:** Keep **1,400 kt**. The same repeated-aircraft candidate appears at every sensitivity
+point down to 750 kt; lowering the ceiling adds no fix pair, aircraft, or candidate and would only
+erode the physical-impossibility margin. The observed discontinuities are a valid review call, while
+shared identity and feed corruption remain explicit benign explanations.
+
+The synthetic teleporting identity remains a separate labelled ceiling test; this audit does not
+tune against it.
+
 ## Reliability-grade calibration against real-traffic proxies (2026-07-25)
 
 Across **123,998 reports**, **1235 aircraft**, and **43.53 hours**, the deterministic detectors
