@@ -16,7 +16,7 @@ fused into a composite air picture over the Singapore FIR neighbourhood.
 > **Status: core system built, gated, and exercised on real ADS-B.** Collection, track
 > building, the six-detector battery (GNSS-interference flagship), the composite air
 > picture, the honest eval harness, the read-only API + ARGUS evidence bridge, and the
-> explainer-first React/Leaflet dashboard are all in place — 81 tests, mypy strict,
+> explainer-first React/Leaflet dashboard are all in place — 89 tests, mypy strict,
 > browser-verified. A first live 12.5-minute Singapore window (54 aircraft, 796 reports)
 > raised **zero false positives** and confirmed the NIC baseline on real traffic, while
 > exposing the method's real bound: **83.3% of cells were too sparse to score**. Numbers,
@@ -103,6 +103,12 @@ its region, centre and radius; dark-aircraft coverage-exit checks use that exact
 a Baltic lane is never evaluated against Singapore geometry. Historical runs with unknown
 parameters stay null and fail open rather than receiving invented defaults.
 
+The [joint air + sea capstone](docs/JOINT_AIR_SEA.md) pulls HORUS and PHAROS evidence
+through their existing ARGUS-compatible APIs and places independent incidents in the same
+coarse space-time cell for review. The real worked run and ARGUS handoff are captured
+end-to-end. Co-location is explicitly not causation: no combined risk score, attribution,
+emitter geolocation, or linked-event claim is produced.
+
 ## Quickstart
 
 ```bash
@@ -112,7 +118,7 @@ make up                                             # Postgres (host port 5435) 
 ```
 
 The dedicated `horus` environment is the supported development path; `make check` is
-self-contained and runs the same scoped ruff, strict-mypy, and 81-test gate as CI.
+self-contained and runs the same scoped ruff, strict-mypy, and 89-test gate as CI.
 
 ## Deploy
 
