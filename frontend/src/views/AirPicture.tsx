@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { CircleMarker, MapContainer, Polygon, Polyline, Rectangle, TileLayer, Tooltip } from 'react-leaflet'
 import { api, reliabilityMeta, type AircraftRollup, type AreaIncident, type CoverageCell } from '../api'
+import Drawer from '../components/Drawer'
+import IntegrityEvidence from '../components/IntegrityEvidence'
 
 /** Three states, never two. An unscoreable cell is drawn as hatched grey — visibly
  *  "no data", never as clear sky, because most of the map is unscoreable at Singapore
@@ -35,9 +37,17 @@ function Rating({ grade }: { grade: string }) {
   )
 }
 
-function RollupCard({ r, open, onToggle }: { r: AircraftRollup; open: boolean; onToggle: () => void }) {
+function RollupCard({ r, onOpen }: { r: AircraftRollup; onOpen: () => void }) {
   return (
-    <div className="roll" onClick={onToggle}>
+    <div
+      className="roll"
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') onOpen()
+      }}
+    >
       <div className="roll-head">
         <Rating grade={r.reliability} />
         <span className="roll-id">{r.icao24}</span>
@@ -52,28 +62,23 @@ function RollupCard({ r, open, onToggle }: { r: AircraftRollup; open: boolean; o
         ))}
         {r.zone && <span className="chip">{r.zone}</span>}
       </div>
-      {open && (
-        <div className="evidence">
-          <table>
-            <tbody>
-              <tr><td>best incident score</td><td>{r.risk_breakdown.best_incident_score.toFixed(3)}</td></tr>
-              <tr><td>agreeing detectors</td><td>{r.risk_breakdown.agreeing_detectors} (+{r.risk_breakdown.agreement_bonus.toFixed(2)})</td></tr>
-              <tr><td>sensitive-zone bonus</td><td>+{r.risk_breakdown.sensitive_zone_bonus.toFixed(2)}</td></tr>
-              <tr><td>composite risk</td><td>{r.risk.toFixed(3)} — transparent sum, capped at 1</td></tr>
-              <tr><td>incidents</td><td>{r.incidents.join(', ')}</td></tr>
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   )
 }
 
-function AreaCard({ a }: { a: AreaIncident }) {
+function AreaCard({ a, onOpen }: { a: AreaIncident; onOpen: () => void }) {
   const degraded = a.evidence['aircraft_degraded'] as number | undefined
   const observed = a.evidence['aircraft_observed'] as number | undefined
   return (
-    <div className="roll">
+    <div
+      className="roll"
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') onOpen()
+      }}
+    >
       <div className="roll-head">
         <Rating grade={a.reliability} />
         <span className="roll-id">{a.incident_type}</span>
@@ -91,13 +96,89 @@ function AreaCard({ a }: { a: AreaIncident }) {
   )
 }
 
+function RollupEvidence({ rollup }: { rollup: AircraftRollup }) {
+  return (
+    <>
+      <div className="evidence drawer-table">
+        <table>
+          <tbody>
+            <tr><td>best incident score</td><td>{rollup.risk_breakdown.best_incident_score.toFixed(3)}</td></tr>
+            <tr><td>agreeing detectors</td><td>{rollup.risk_breakdown.agreeing_detectors} (+{rollup.risk_breakdown.agreement_bonus.toFixed(2)})</td></tr>
+            <tr><td>sensitive-zone bonus</td><td>+{rollup.risk_breakdown.sensitive_zone_bonus.toFixed(2)}</td></tr>
+            <tr><td>composite risk</td><td>{rollup.risk.toFixed(3)} — transparent sum, capped at 1</td></tr>
+            <tr><td>incidents</td><td>{rollup.incidents.join(', ')}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <IntegrityEvidence icao24={rollup.icao24} />
+    </>
+  )
+}
+
+function AreaEvidence({ area }: { area: AreaIncident }) {
+  const rawWorst = area.evidence['worst_nic_by_aircraft']
+  const worst =
+    rawWorst && typeof rawWorst === 'object' && !Array.isArray(rawWorst)
+      ? Object.entries(rawWorst).filter((entry): entry is [string, number] => typeof entry[1] === 'number')
+      : []
+  const hardLoss = new Set(
+    Array.isArray(area.evidence['hard_loss_aircraft'])
+      ? area.evidence['hard_loss_aircraft'].filter((value): value is string => typeof value === 'string')
+      : [],
+  )
+  const [selected, setSelected] = useState<string | null>(worst[0]?.[0] ?? null)
+
+  return (
+    <>
+      <div className="evidence drawer-table">
+        <table>
+          <tbody>
+            {Object.entries(area.evidence)
+              .filter(([key]) => !['worst_nic_by_aircraft', 'hard_loss_aircraft'].includes(key))
+              .map(([key, value]) => (
+                <tr key={key}>
+                  <td>{key}</td>
+                  <td>{typeof value === 'object' ? JSON.stringify(value) : String(value)}</td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+      <section className="witnesses">
+        <span className="drawer-kicker">corroborating aircraft</span>
+        <p>
+          A regional signal requires several independent aircraft in the same cell-window.
+          Select one witness to inspect its aligned NIC and NACp history.
+        </p>
+        <div className="witness-list">
+          {worst.map(([icao24, nic]) => (
+            <button
+              type="button"
+              key={icao24}
+              className={selected === icao24 ? 'selected' : ''}
+              onClick={() => setSelected(icao24)}
+            >
+              <span>{icao24}</span>
+              <b>NIC {nic}</b>
+              {hardLoss.has(icao24) && <i>NIC+NACp hard loss</i>}
+            </button>
+          ))}
+        </div>
+      </section>
+      {selected && <IntegrityEvidence icao24={selected} />}
+    </>
+  )
+}
+
 export default function AirPicture() {
   const picture = useQuery({ queryKey: ['air-picture'], queryFn: api.airPicture })
   const coverage = useQuery({ queryKey: ['coverage'], queryFn: () => api.coverage(6) })
   const [showCoverage, setShowCoverage] = useState(true)
   const zones = useQuery({ queryKey: ['zones'], queryFn: api.zones })
   const tracks = useQuery({ queryKey: ['tracks'], queryFn: api.tracks })
-  const [openId, setOpenId] = useState<string | null>(null)
+  const [drawer, setDrawer] = useState<
+    { kind: 'area'; area: AreaIncident } | { kind: 'aircraft'; rollup: AircraftRollup } | null
+  >(null)
 
   const trackLines = useMemo(
     () =>
@@ -213,6 +294,7 @@ export default function AirPicture() {
                   center={[a.lat, a.lon]}
                   radius={26}
                   pathOptions={{ color: '#f87171', weight: 2, fillOpacity: 0.15 }}
+                  eventHandlers={{ click: () => setDrawer({ kind: 'area', area: a }) }}
                 >
                   <Tooltip sticky>
                     {a.incident_type}: {String(a.evidence['aircraft_degraded'])}/
@@ -233,7 +315,11 @@ export default function AirPicture() {
           </p>
           {picture.isLoading && <p className="sub">loading…</p>}
           {(picture.data?.areas ?? []).map((a) => (
-            <AreaCard key={a.incident_id} a={a} />
+            <AreaCard
+              key={a.incident_id}
+              a={a}
+              onOpen={() => setDrawer({ kind: 'area', area: a })}
+            />
           ))}
           {picture.data && picture.data.areas.length === 0 && (
             <p className="sub">No area-level incidents in the current picture.</p>
@@ -249,12 +335,23 @@ export default function AirPicture() {
             <RollupCard
               key={r.icao24}
               r={r}
-              open={openId === r.icao24}
-              onToggle={() => setOpenId(openId === r.icao24 ? null : r.icao24)}
+              onOpen={() => setDrawer({ kind: 'aircraft', rollup: r })}
             />
           ))}
         </section>
       </div>
+      {drawer && (
+        <Drawer
+          title={drawer.kind === 'area' ? drawer.area.incident_type : drawer.rollup.icao24}
+          onClose={() => setDrawer(null)}
+        >
+          {drawer.kind === 'area' ? (
+            <AreaEvidence key={drawer.area.incident_id} area={drawer.area} />
+          ) : (
+            <RollupEvidence rollup={drawer.rollup} />
+          )}
+        </Drawer>
+      )}
     </div>
   )
 }

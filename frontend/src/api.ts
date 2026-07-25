@@ -116,6 +116,18 @@ export interface FeatureCollection {
   features: GeoFeature[]
 }
 
+export interface AircraftTrack {
+  type: 'Feature'
+  geometry: { type: 'LineString'; coordinates: [number, number, number][] }
+  properties: {
+    icao24: string
+    n: number
+    ts_series: string[]
+    nic_series: (number | null)[]
+    nac_p_series: (number | null)[]
+  }
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`)
   if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`)
@@ -166,6 +178,8 @@ export const api = {
   zones: () => get<FeatureCollection>('/zones'),
   coverage: (hours = 6) => get<Coverage>(`/gnss-coverage?hours=${hours}`),
   tracks: () => get<FeatureCollection>('/tracks'),
+  aircraftTrack: (icao24: string) =>
+    get<AircraftTrack>(`/aircraft/${encodeURIComponent(icao24)}/track`),
   modelInfo: () => get<ModelInfo>('/model'),
   scoreTrack: (points: TrackPoint[]) => post<ScoreResult>('/score-track', { points }),
 }

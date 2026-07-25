@@ -61,7 +61,10 @@ def test_geojson_endpoints(client: TestClient) -> None:
 
     track = client.get("/aircraft/d00001/track").json()
     assert track["geometry"]["type"] == "LineString"
-    assert len(track["properties"]["nic_series"]) == track["properties"]["n"]
+    props = track["properties"]
+    assert len(props["ts_series"]) == props["n"]
+    assert len(props["nic_series"]) == props["n"]
+    assert len(props["nac_p_series"]) == props["n"]
     assert client.get("/aircraft/zzzzzz/track").status_code == 404
 
 
