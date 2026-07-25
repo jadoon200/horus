@@ -211,6 +211,30 @@ export default function HowItWorks() {
         cognitive, maritime <i>and</i> air evidence in a single brief, each item carrying
         its own source rating.
       </p>
+      <div className="joint-contract">
+        <h4>Joint Strait review — the correlation contract</h4>
+        <p>
+          The capstone places HORUS air evidence and PHAROS maritime evidence in the same
+          coarse space-time cell, then hands both original, citable items to the ARGUS
+          analyst. It is a queue for investigation, not a new detector.
+        </p>
+        <div className="joint-example" aria-label="Example joint review pair">
+          <span>GNSS integrity cell</span>
+          <b>same coarse cell + nearby start time</b>
+          <span>dark-ship incident</span>
+        </div>
+        <p>
+          <b>Co-location is not causation.</b> A jamming cell and a dark ship in the same box
+          are a coincidence to investigate, never a linked event. HORUS makes no attribution,
+          does not geolocate an emitter, and does not turn the pair into a combined risk
+          score. Every item remains human-review decision support and keeps its own Admiralty
+          source grade.
+        </p>
+        <p className="caveat">
+          If either sibling API is unavailable, the workflow reports the missing lane and
+          returns a valid negative instead of filling the gap with inferred evidence.
+        </p>
+      </div>
 
       <h2>Responsible use</h2>
       <p className="dim">
