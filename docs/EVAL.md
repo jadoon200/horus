@@ -186,6 +186,36 @@ check below, with PCA as a close, cheap alternative and Isolation Forest dropped
 narrower claim than "the GRU is best": stability, transfer and separation are *necessary*
 conditions for trusting a ranking, not sufficient ones.
 
+### Frozen model record — SG-AIR-v1 (2026-07-25)
+
+The selected 8-unit GRU was retrained on the subsequently accumulated Singapore corpus and
+frozen as a local inference artifact:
+
+| Field | Value |
+|---|---:|
+| Real Singapore tracks | 725 |
+| Hidden units | 8 |
+| Training seed | 7 |
+| Frozen population threshold (p99 train error) | 2.877444 |
+| Artifact SHA-256 | `c3e218d0ebbf4529f4c594112c775a5fce561b4cfc30acafaf49cf106581ed53` |
+
+The artifact stays local with the real-data lane. The public demo instead trains and bakes
+a separate model from the deterministic **synthetic** seed during the container build, so
+no real per-aircraft data or real-trained artifact ships. `GET /model` reports the served
+artifact's SHA and pin status; `POST /score-track` applies that exact frozen scaler, network
+and threshold to supplied points. If `HORUS_ANOMALY_ARTIFACT_SHA256` is configured and does
+not match, scoring is refused rather than silently using a drifted model.
+
+This makes inference reproducible for a given frozen artifact; it does **not** turn the
+unsupervised score into a label. The response says only that a trajectory is unusual
+relative to the training population and retains the human-review caveat.
+
+Reproduce the real-data freeze locally:
+
+```bash
+HORUS_DATABASE_URL=sqlite:///data/sg-live.db python -m scripts.train_anomaly --region sg-live
+```
+
 ### Interpretability spot-check (illustrative, not evidence)
 
 The GRU's second-ranked anomaly over Singapore was `9MMFA`, a **P28A** — a Piper PA-28

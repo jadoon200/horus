@@ -139,3 +139,117 @@ def test_demo_mode_serves_the_whole_snapshot(
     # ...but demo mode shows it regardless of the window.
     assert demo["cells_total"] > 0
     assert demo["cells_total"] >= live["cells_total"]
+
+
+def _demo_track_points():  # type: ignore[no-untyped-def]
+    """A short straight demo track as score-track input points."""
+    from datetime import UTC, datetime, timedelta
+
+    base = datetime(2026, 7, 24, tzinfo=UTC)
+    return [
+        {
+            "lat": 1.30 + 0.01 * k,
+            "lon": 103.8,
+            "alt_ft": 35000.0,
+            "ts": (base + timedelta(seconds=30 * k)).timestamp(),
+        }
+        for k in range(30)
+    ]
+
+
+def test_model_info_reports_source(client: TestClient) -> None:
+    """/model must say whether a frozen artifact is served or it's a runtime fallback."""
+    info = client.get("/model").json()
+    assert info["flagship"] == "GRU sequence autoencoder"
+    assert info["model_source"] in ("trained-artifact", "runtime-fallback")
+
+
+def test_score_track_cors_preflight_allows_post(client: TestClient) -> None:
+    response = client.options(
+        "/score-track",
+        headers={
+            "origin": "http://localhost:5199",
+            "access-control-request-method": "POST",
+        },
+    )
+    assert response.status_code == 200
+    assert "POST" in response.headers["access-control-allow-methods"]
+
+
+def test_score_track_needs_a_frozen_model_and_is_deterministic(
+    client: TestClient,
+    tmp_path,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    """With a frozen artifact, the same track scores identically every call.
+
+    Determinism is the whole point of freezing: a served model that retrained per request
+    would give a different verdict each time. The route loads the pinned artifact and must
+    reproduce its score exactly.
+    """
+    # Train a tiny artifact into a temp path and point the module at it.
+    from datetime import UTC, datetime, timedelta
+
+    from horus.detect import seq_anomaly
+    from horus.detect.seq_anomaly import train_model
+    from horus.tracks.build import sequence_from_points
+
+    base = datetime(2026, 7, 24, tzinfo=UTC)
+    seqs = [
+        sequence_from_points(
+            [
+                (base + timedelta(seconds=30 * k), 1.3 + 0.01 * k + 0.001 * j, 103.8, 35000.0)
+                for k in range(30)
+            ]
+        )
+        for j in range(8)
+    ]
+    model = train_model(seqs, epochs=15)
+    artifact = tmp_path / "model.pt"
+    model.save(artifact)
+    monkeypatch.setattr(seq_anomaly, "ARTIFACT_PATH", artifact)
+
+    body = {"points": _demo_track_points()}
+    r1 = client.post("/score-track", json=body).json()
+    r2 = client.post("/score-track", json=body).json()
+    assert r1["scored"] is True and r1["model_source"] == "trained-artifact"
+    assert r1["reconstruction_error"] == r2["reconstruction_error"]  # deterministic
+    assert "anomalous" in r1 and "population_threshold" in r1
+    assert r1["artifact_sha256"] == seq_anomaly.artifact_sha256(artifact)
+
+    # A configured pin is an enforcement control, not decorative metadata.
+    from horus.config import get_settings
+
+    monkeypatch.setenv("HORUS_ANOMALY_ARTIFACT_SHA256", "0" * 64)
+    get_settings.cache_clear()
+    try:
+        blocked = client.post("/score-track", json=body).json()
+        assert blocked["scored"] is False
+        assert "does not match" in blocked["detail"]
+        assert client.get("/model").json()["sha_matches_pin"] is False
+    finally:
+        monkeypatch.delenv("HORUS_ANOMALY_ARTIFACT_SHA256")
+        get_settings.cache_clear()
+
+
+def test_score_track_reports_fallback_without_an_artifact(
+    client: TestClient,
+    tmp_path,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    """No frozen model → say so explicitly, never fabricate a score."""
+    from horus.detect import seq_anomaly
+
+    monkeypatch.setattr(seq_anomaly, "ARTIFACT_PATH", tmp_path / "absent.pt")
+    r = client.post("/score-track", json={"points": _demo_track_points()}).json()
+    assert r["scored"] is False and r["model_source"] == "runtime-fallback"
+
+
+def test_score_track_rejects_degenerate_input(client: TestClient) -> None:
+    assert client.post("/score-track", json={"points": []}).status_code == 422
+    one = {"points": [{"lat": 1.3, "lon": 103.8, "alt_ft": 35000.0, "ts": 0.0}]}
+    assert client.post("/score-track", json=one).status_code == 422
+    duplicate = {"points": [one["points"][0], one["points"][0]]}
+    assert client.post("/score-track", json=duplicate).status_code == 422
+    out_of_bounds = {"points": [{**p, "lat": 91.0} for p in _demo_track_points()[:2]]}
+    assert client.post("/score-track", json=out_of_bounds).status_code == 422

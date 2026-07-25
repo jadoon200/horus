@@ -122,6 +122,41 @@ async function get<T>(path: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
+export interface ModelInfo {
+  flagship: string
+  model_source: 'trained-artifact' | 'runtime-fallback'
+  artifact_sha256: string | null
+  sha_pinned: boolean
+  sha_matches_pin: boolean | null
+}
+
+export interface TrackPoint {
+  lat: number
+  lon: number
+  alt_ft: number | null
+  ts: number
+}
+
+export interface ScoreResult {
+  model_source: 'trained-artifact' | 'runtime-fallback'
+  scored: boolean
+  reconstruction_error?: number
+  population_threshold?: number
+  anomalous?: boolean
+  artifact_sha256?: string
+  detail?: string
+}
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`)
+  return res.json() as Promise<T>
+}
+
 export const api = {
   health: () => get<Health>('/health'),
   stats: () => get<Stats>('/stats'),
@@ -131,6 +166,8 @@ export const api = {
   zones: () => get<FeatureCollection>('/zones'),
   coverage: (hours = 6) => get<Coverage>(`/gnss-coverage?hours=${hours}`),
   tracks: () => get<FeatureCollection>('/tracks'),
+  modelInfo: () => get<ModelInfo>('/model'),
+  scoreTrack: (points: TrackPoint[]) => post<ScoreResult>('/score-track', { points }),
 }
 
 /** Reliability grade → tone + human label (NATO Admiralty system, ADS-B confidence). */
