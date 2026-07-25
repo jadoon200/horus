@@ -1,6 +1,17 @@
 from datetime import datetime, timedelta
 
-from scripts.eval_multiday import HourStats, aggregate_clock_hours, render
+from scripts.eval_multiday import (
+    HourStats,
+    aggregate_clock_hours,
+    merge_intervals,
+    outage_intervals,
+    render,
+)
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
+from horus.db.base import Base
+from horus.db.models import CollectorRun, CoverageOutage
 
 
 def _row(
@@ -77,3 +88,66 @@ def test_render_switches_to_multi_cycle_table_only_at_48_hours() -> None:
     assert "crosses the **48-hour / two-cycle bar**" in ready
     assert "mean ± population standard deviation" in ready
     assert "| 00:00 | 2 |" in ready
+
+
+def test_merge_intervals_unions_overlaps_and_touching_ranges() -> None:
+    start = datetime(2026, 7, 23, 0)
+
+    merged = merge_intervals(
+        [
+            (start + timedelta(minutes=30), start + timedelta(hours=1, minutes=30)),
+            (start, start + timedelta(hours=1)),
+            (start + timedelta(hours=1, minutes=30), start + timedelta(hours=2)),
+            (start + timedelta(hours=3), start + timedelta(hours=4)),
+        ]
+    )
+
+    assert merged == [
+        (start, start + timedelta(hours=2)),
+        (start + timedelta(hours=3), start + timedelta(hours=4)),
+    ]
+
+
+def test_outage_intervals_are_region_scoped_clipped_and_unioned() -> None:
+    start = datetime(2026, 7, 23, 0)
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        sg_run = CollectorRun(started_at=start, status="stopped", region="sg")
+        baltic_run = CollectorRun(started_at=start, status="stopped", region="baltic")
+        session.add_all([sg_run, baltic_run])
+        session.flush()
+        session.add_all(
+            [
+                CoverageOutage(
+                    opened_at=start - timedelta(hours=1),
+                    closed_at=start + timedelta(minutes=30),
+                    reason="sg one",
+                    run_id=sg_run.id,
+                ),
+                CoverageOutage(
+                    opened_at=start + timedelta(minutes=15),
+                    closed_at=start + timedelta(hours=1),
+                    reason="sg two",
+                    run_id=sg_run.id,
+                ),
+                CoverageOutage(
+                    opened_at=start,
+                    closed_at=start + timedelta(hours=2),
+                    reason="other region",
+                    run_id=baltic_run.id,
+                ),
+                CoverageOutage(
+                    opened_at=start + timedelta(hours=3),
+                    closed_at=start + timedelta(hours=4),
+                    reason="outside evaluation span",
+                    run_id=sg_run.id,
+                ),
+            ]
+        )
+        session.flush()
+
+        intervals, ledger_rows = outage_intervals(session, "sg", start, start + timedelta(hours=2))
+
+    assert ledger_rows == 2
+    assert intervals == [(start, start + timedelta(hours=1))]
