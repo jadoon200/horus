@@ -63,6 +63,8 @@ function Shell() {
           HORUS
           <small>air domain awareness · GNSS-interference watch</small>
         </div>
+        <Freshness />
+        <StatusPill />
         <nav className="tabs">
           {TABS.map((t) => (
             <button
@@ -74,9 +76,6 @@ function Shell() {
             </button>
           ))}
         </nav>
-        <div className="spacer" />
-        <Freshness />
-        <StatusPill />
       </header>
       <main>
         {tab === 'picture' && <AirPicture />}
