@@ -41,6 +41,9 @@ Honest status ledger — ✅ built & gated, 🔨 in progress, ⬜ planned.
 | V8 | Coverage/plausibility model for the transponder-gap detector | ✅ real-data FP triage: 85 → 4 calls (outage ledger, descent, boundary-exit), true positives unchanged |
 | V9 | Incremental live processing, so the dashboard is current rather than batch-stale | ✅ warm cycle bounded by the refresh window, not the corpus (6 h → 0.67 s); parity with full rebuild tested |
 | V10 | Live dashboard: interference heatmap with *unscoreable* as a first-class state, collector freshness in the masthead | ✅ browser-verified against the live lane |
+| V11 | Single-container deploy (Dockerfile.web + render.yaml, slim API runtime, baked synthetic seed; demo/snapshot mode; keep-alive) | ✅ **live** on Render, browser-verified |
+
+**Live:** https://horus-kc7w.onrender.com (Render free tier, baked synthetic snapshot; keep-alive pings `/health`).
 
 The ARGUS-side consumer is **done** — ARGUS reads this project's `/geoint/evidence` and
 cites air incidents alongside cyber and maritime ones.
