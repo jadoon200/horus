@@ -74,9 +74,16 @@ def bridge_previous_run(session: Session, run_id: int, *, poll_seconds: float) -
     A crashed or stopped collector leaves uncollected sky between runs; without this
     bridge that interval looks like every aircraft going silent at once.
     """
+    current = session.get(CollectorRun, run_id)
+    if current is None:
+        raise ValueError(f"collector run {run_id} does not exist")
     prev = session.scalars(
         select(CollectorRun)
-        .where(CollectorRun.id != run_id, CollectorRun.last_message_at.is_not(None))
+        .where(
+            CollectorRun.id != run_id,
+            CollectorRun.region == current.region,
+            CollectorRun.last_message_at.is_not(None),
+        )
         .order_by(CollectorRun.id.desc())
         .limit(1)
     ).first()
@@ -105,8 +112,17 @@ def run_collector(
 ) -> None:
     """Poll until stopped (or for `cycles` polls), maintaining the run/outage ledger."""
     s = get_settings()
+    resolved_centre = centre or (s.adsb_center_lat, s.adsb_center_lon)
+    resolved_radius_nm = radius_nm if radius_nm is not None else s.adsb_radius_nm
     with session_scope() as session:
-        run = CollectorRun(started_at=datetime.now(UTC), status="running")
+        run = CollectorRun(
+            started_at=datetime.now(UTC),
+            status="running",
+            region=region,
+            center_lat=resolved_centre[0],
+            center_lon=resolved_centre[1],
+            radius_nm=resolved_radius_nm,
+        )
         session.add(run)
         session.flush()
         run_id = run.id

@@ -66,6 +66,31 @@ def test_quick_restart_is_not_an_outage() -> None:
         assert s.scalar(select(func.count()).select_from(CoverageOutage)) == 0
 
 
+def test_previous_run_bridge_is_scoped_to_the_same_region() -> None:
+    with _session() as s:
+        old_sg = CollectorRun(
+            started_at=T0,
+            last_message_at=T0 + timedelta(minutes=5),
+            stopped_at=T0 + timedelta(minutes=5),
+            status="stopped",
+            region="sg",
+        )
+        newer_baltic = CollectorRun(
+            started_at=T0 + timedelta(minutes=6),
+            last_message_at=T0 + timedelta(minutes=7),
+            stopped_at=T0 + timedelta(minutes=7),
+            status="stopped",
+            region="baltic",
+        )
+        current_sg = CollectorRun(started_at=datetime.now(UTC), status="running", region="sg")
+        s.add_all([old_sg, newer_baltic, current_sg])
+        s.flush()
+
+        assert bridge_previous_run(s, current_sg.id, poll_seconds=30.0) is True
+        outage = s.scalars(select(CoverageOutage)).one()
+        assert outage.opened_at == old_sg.last_message_at.replace(tzinfo=None)
+
+
 def test_bridged_sleep_suppresses_the_false_dark_aircraft() -> None:
     """The whole point: a host sleep must not become a dark-ship-style incident."""
     with _session() as s:
@@ -204,3 +229,55 @@ def test_aircraft_that_could_have_left_the_circle_is_not_called_dark() -> None:
         flagged = {i.icao24 for i in detect_gaps(s, "sg")}
         assert "shortx" in flagged, "too brief to have left coverage — a real gap"
         assert "longx1" not in flagged, "had time to exit the circle and return"
+
+
+def test_gap_uses_the_boundary_recorded_for_a_non_default_region() -> None:
+    """Baltic reports must use the Baltic run circle, never Singapore's config circle."""
+    with _session() as s:
+        s.add(Aircraft(icao24="balt01"))
+        s.add(
+            Position(
+                icao24="balt01",
+                ts=T0,
+                lat=54.9,
+                lon=20.5,
+                alt_baro_ft=35_000,
+                baro_rate_fpm=0,
+                gs_kt=450,
+                region="baltic",
+            )
+        )
+        s.add(
+            Position(
+                icao24="balt01",
+                ts=T0 + timedelta(hours=8),
+                lat=55.5,
+                lon=21.4,
+                alt_baro_ft=35_000,
+                gs_kt=450,
+                region="baltic",
+            )
+        )
+        s.commit()
+
+        # With no historical provenance, the Singapore fallback is inapplicable and fails
+        # open: the call stays for review.
+        assert len(detect_gaps(s, "baltic")) == 1
+
+        s.add(
+            CollectorRun(
+                started_at=T0 - timedelta(minutes=1),
+                last_message_at=T0 + timedelta(hours=8, minutes=1),
+                stopped_at=T0 + timedelta(hours=8, minutes=1),
+                status="stopped",
+                region="baltic",
+                center_lat=54.9,
+                center_lon=20.5,
+                radius_nm=250,
+            )
+        )
+        s.commit()
+
+        # Eight hours was ample to leave this recorded circle and return. The silence is
+        # collection geometry, not attributable aircraft behaviour.
+        assert detect_gaps(s, "baltic") == []

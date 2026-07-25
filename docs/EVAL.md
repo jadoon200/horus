@@ -195,6 +195,27 @@ python -m scripts.eval_opensky --acknowledge-opensky-terms --write
 This completes the optional adapter without weakening the zero-cost, keyless adsb.lol core
 or quietly turning a research API into an operational dependency.
 
+## Per-run collection-boundary provenance (2026-07-25)
+
+The transponder-gap coverage exclusion originally knew only the configured Singapore
+circle. It safely failed open for a Baltic point outside that circle, but it could not
+recognize that an eight-hour Baltic silence was long enough to leave the *Baltic* 250-nm
+circle and return. That was a known band-aid: safe from false suppression, incomplete at
+explaining non-default-region gaps.
+
+Migration `0002_collection_boundaries` now records the region, centre and radius on every
+new collector run. Gap evaluation finds the run that covered the last pre-silence report
+and uses that exact circle. The regression case is explicit: the same Baltic gap remains a
+review call when provenance is absent, then is correctly excluded as collection geometry
+when a 54.9 N, 20.5 E / 250-nm run is recorded. Inter-run outage bridging is also scoped to
+the same region instead of accidentally choosing whichever regional collector ran last.
+
+Historical run rows remain null by design. The migration cannot know which command-line
+centre produced old data, and backfilling Singapore defaults into Baltic rows would be
+false provenance. Those rows retain the conservative behaviour: the configured fallback
+is used only when the position actually lies inside it; otherwise the gap fails open for
+human review.
+
 ## Incursion-airway source spike — stopped at the data gate (2026-07-25)
 
 The post-triage incursion residual is dominated by regional airliners using the low

@@ -72,3 +72,17 @@ def test_live_tail_index_exists_after_migration(tmp_path: Path) -> None:
         index["name"] == "ix_positions_icao24_ts" and index["column_names"] == ["icao24", "ts"]
         for index in indexes
     )
+
+
+def test_collection_run_boundary_columns_exist_after_migration(tmp_path: Path) -> None:
+    migration_url = f"sqlite:///{tmp_path / 'migration.db'}"
+    _run_migrations(migration_url)
+
+    inspector = inspect(create_engine(migration_url))
+    columns = {column["name"] for column in inspector.get_columns("collector_runs")}
+    assert {"region", "center_lat", "center_lon", "radius_nm"} <= columns
+    indexes = inspector.get_indexes("collector_runs")
+    assert any(
+        index["name"] == "ix_collector_runs_region" and index["column_names"] == ["region"]
+        for index in indexes
+    )

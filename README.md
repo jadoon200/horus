@@ -16,7 +16,7 @@ fused into a composite air picture over the Singapore FIR neighbourhood.
 > **Status: core system built, gated, and exercised on real ADS-B.** Collection, track
 > building, the six-detector battery (GNSS-interference flagship), the composite air
 > picture, the honest eval harness, the read-only API + ARGUS evidence bridge, and the
-> explainer-first React/Leaflet dashboard are all in place — 78 tests, mypy strict,
+> explainer-first React/Leaflet dashboard are all in place — 81 tests, mypy strict,
 > browser-verified. A first live 12.5-minute Singapore window (54 aircraft, 796 reports)
 > raised **zero false positives** and confirmed the NIC baseline on real traffic, while
 > exposing the method's real bound: **83.3% of cells were too sparse to score**. Numbers,
@@ -97,6 +97,11 @@ explicit terms acknowledgement. It is source/region-isolated and never scheduled
 deployed: current OpenSky terms require an agreement for operational API use, and its state
 vectors omit NIC/NACp/SIL, so it can measure receiver coverage but cannot strengthen the
 GNSS-interference evidence.
+
+Collection boundaries are provenance, not a global guess. Each new collector run records
+its region, centre and radius; dark-aircraft coverage-exit checks use that exact circle, so
+a Baltic lane is never evaluated against Singapore geometry. Historical runs with unknown
+parameters stay null and fail open rather than receiving invented defaults.
 
 ## Quickstart
 

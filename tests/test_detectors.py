@@ -273,14 +273,13 @@ def test_coverage_exit_only_applies_inside_the_configured_circle() -> None:
     non-default region is silently dropped (to_boundary clamps to 0, so the aircraft is
     always judged able to have left). Reproduced against Baltic coordinates before the guard.
     """
-    from horus.config import Settings
-    from horus.detect.gaps import _could_have_left_coverage
+    from horus.detect.gaps import CollectionBoundary, _could_have_left_coverage
 
-    s = Settings(_env_file=None)  # type: ignore[call-arg]
+    singapore = CollectionBoundary(lat=1.35, lon=103.82, radius_nm=250, source="test")
     # Far outside the Singapore circle (Baltic): must NOT be suppressed.
-    assert _could_have_left_coverage(54.9, 20.5, 450.0, 12.0, s) is False
+    assert _could_have_left_coverage(54.9, 20.5, 450.0, 12.0, singapore) is False
     # Near the Singapore centre with a long gap: the geometry legitimately applies.
-    assert _could_have_left_coverage(1.4, 103.9, 450.0, 600.0, s) is True
+    assert _could_have_left_coverage(1.4, 103.9, 450.0, 600.0, singapore) is True
 
 
 def _incursion_session():  # type: ignore[no-untyped-def]

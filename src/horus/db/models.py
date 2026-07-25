@@ -85,7 +85,13 @@ class Position(Base):
 
 
 class CollectorRun(Base):
-    """One continuous collector process lifetime and its observed feed health."""
+    """One continuous collector process lifetime and its observed feed health.
+
+    The collection boundary is run provenance, not a global detector setting. A region may
+    be collected around a different centre (the Baltic control is the concrete case), and
+    the gap detector must evaluate coverage exit against the circle that produced a report.
+    Historical runs predating migration 0002 remain NULL and fail open.
+    """
 
     __tablename__ = "collector_runs"
 
@@ -97,6 +103,10 @@ class CollectorRun(Base):
     report_count: Mapped[int] = mapped_column(Integer(), default=0)
     aircraft_count: Mapped[int] = mapped_column(Integer(), default=0)
     status: Mapped[str] = mapped_column(String(32), index=True, default="running")
+    region: Mapped[str | None] = mapped_column(String(64), index=True)
+    center_lat: Mapped[float | None] = mapped_column(Float())
+    center_lon: Mapped[float | None] = mapped_column(Float())
+    radius_nm: Mapped[int | None] = mapped_column(Integer())
 
 
 class CoverageOutage(Base):
