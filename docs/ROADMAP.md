@@ -48,6 +48,7 @@ Honest status ledger — ✅ built & gated, 🔨 in progress, ⬜ planned.
 | V15 | Emergency-squawk notable-event channel: visit-grouped 7500/7600/7700, repeated-sample floor, incremental parity | ✅ synthetic 7700 detected; 1200/2000 quiet; 0 events over 120,342 real SG reports |
 | V16 | Deployment-image CI: build the exact Dockerfile, boot the baked demo, assert health/data/model/inference | ✅ independent smoke lane |
 | V17 | Reliability-grade calibration against real-traffic plausibility proxies | ✅ 51 incidents audited; grades separate gap quality modestly but are descriptive, not calibrated, for one-grade incursion/jamming classes |
+| V18 | Spoof-threshold characterization over consecutive real fixes | ✅ 123,649 pairs; three >1,400-kt discontinuities form one review candidate; lowering to 750 kt adds nothing, so 1,400 kt retained |
 
 **Live:** https://horus-kc7w.onrender.com (Render free tier, baked synthetic snapshot; keep-alive pings `/health`).
 

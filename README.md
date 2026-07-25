@@ -16,7 +16,7 @@ fused into a composite air picture over the Singapore FIR neighbourhood.
 > **Status: core system built, gated, and exercised on real ADS-B.** Collection, track
 > building, the six-detector battery (GNSS-interference flagship), the composite air
 > picture, the honest eval harness, the read-only API + ARGUS evidence bridge, and the
-> explainer-first React/Leaflet dashboard are all in place — 69 tests, mypy strict,
+> explainer-first React/Leaflet dashboard are all in place — 72 tests, mypy strict,
 > browser-verified. A first live 12.5-minute Singapore window (54 aircraft, 796 reports)
 > raised **zero false positives** and confirmed the NIC baseline on real traffic, while
 > exposing the method's real bound: **83.3% of cells were too sparse to score**. Numbers,
@@ -80,6 +80,11 @@ calibration audit found that they modestly separate near-threshold from stronger
 transponder gaps, but fixed-C incursion and jamming grades do not discriminate within
 their classes; the proxy table and its circularity limits are recorded in
 [docs/EVAL.md](docs/EVAL.md).
+
+The spoof ceiling is data-characterized rather than guessed: among 123,649 consecutive
+real fix pairs, only three exceeded 750 kt, all three exceeded 1,400 kt, and all formed the
+same repeated-discontinuity review candidate. Lowering the threshold would add no evidence,
+so the physical-impossibility margin stays at 1,400 kt.
 
 ## Quickstart
 
