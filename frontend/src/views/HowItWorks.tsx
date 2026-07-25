@@ -1,3 +1,5 @@
+import ScoreTrackPanel from './ScoreTrackPanel'
+
 /**
  * The explainer view — a first-class part of the product (this portfolio ships no demo
  * videos or blog posts; the dashboard itself carries the "how it works" story).
@@ -134,6 +136,8 @@ export default function HowItWorks() {
           same unsupervised setup.
         </p>
       </div>
+
+      <ScoreTrackPanel />
 
       <h2>Ratings: score vs Admiralty grade</h2>
       <p>

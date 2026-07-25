@@ -16,7 +16,7 @@ fused into a composite air picture over the Singapore FIR neighbourhood.
 > **Status: core system built, gated, and exercised on real ADS-B.** Collection, track
 > building, the five-detector battery (GNSS-interference flagship), the composite air
 > picture, the honest eval harness, the read-only API + ARGUS evidence bridge, and the
-> explainer-first React/Leaflet dashboard are all in place — 30 tests, mypy strict,
+> explainer-first React/Leaflet dashboard are all in place — 61 tests, mypy strict,
 > browser-verified. A first live 12.5-minute Singapore window (54 aircraft, 796 reports)
 > raised **zero false positives** and confirmed the NIC baseline on real traffic, while
 > exposing the method's real bound: **83.3% of cells were too sparse to score**. Numbers,
@@ -60,8 +60,9 @@ ceiling, not a capability claim) · [OpenSky Network](https://opensky-network.or
 ## Stack
 
 Python 3.12 · SQLAlchemy 2.0 / Alembic · PostgreSQL (SQLite for tests — no PostGIS; spatial
-math in pure numpy) · httpx + tenacity · scikit-learn · torch (GRU sequence autoencoder) ·
-FastAPI · React + TypeScript + Leaflet (planned) · ruff + mypy (strict) + pytest gate.
+math in pure numpy) · httpx + tenacity · scikit-learn · torch (frozen GRU sequence
+autoencoder + stateless `/score-track`) · FastAPI · React + TypeScript + Leaflet · ruff +
+mypy (strict) + pytest gate.
 Mirrors SENTINEL/ARGUS/PHAROS conventions so the four read as one body of work.
 
 ## Quickstart

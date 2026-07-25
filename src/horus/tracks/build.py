@@ -98,6 +98,27 @@ def track_features(points: list[_Point], n: int) -> list[float]:
     return [float(v) for v in seq.reshape(-1)]
 
 
+def sequence_from_points(
+    points: list[tuple[datetime, float, float, float | None]],
+    settings: Settings | None = None,
+) -> list[list[float]]:
+    """Build the GRU's sequence descriptor from raw (ts, lat, lon, alt_ft) points.
+
+    The stateless `/score-track` inference route uses this so a pasted track is described
+    *identically* to a stored track — same resample size, same 5-channel deltas — otherwise
+    inference would score a different feature space than the model trained on. Requires at
+    least two points to form one step.
+    """
+    if len(points) < 2:
+        raise ValueError("need at least two points to form a track sequence")
+    s = settings or get_settings()
+    pts = [_Point(ts, lat, lon, alt) for ts, lat, lon, alt in points]
+    pts.sort(key=lambda p: utc_naive(p.ts))
+    if any(utc_naive(cur.ts) <= utc_naive(prev.ts) for prev, cur in pairwise(pts)):
+        raise ValueError("track timestamps must be unique")
+    return track_sequence(pts, s.track_resample_points)
+
+
 def segment_aircraft(
     icao24: str, positions: list[Position], settings: Settings | None = None
 ) -> list[Track]:

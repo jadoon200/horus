@@ -9,6 +9,7 @@ Incidents are decision support for human review, never automated verdicts.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -19,7 +20,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -29,8 +30,10 @@ from horus.db.base import get_session_factory, init_sqlite_schema
 from horus.db.models import Aircraft, Incident, Position, Track
 from horus.detect.ensemble import air_picture
 from horus.detect.jamming import coverage_grid
+from horus.detect.seq_anomaly import artifact_sha256, load_model
 from horus.geoint import to_evidence
 from horus.timeutil import utc_naive
+from horus.tracks.build import sequence_from_points
 from horus.zones import all_zones
 
 __version__ = "0.1.0"
@@ -57,7 +60,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed or [],
     allow_origin_regex=None if _allowed else r"http://localhost:\d+",
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -354,6 +357,104 @@ def geoint_evidence(
     """Incidents as citable, source-rated evidence (ARGUS-compatible EvidenceItem shape)."""
     q = select(Incident).where(Incident.score >= min_score).order_by(Incident.score.desc())
     return [to_evidence(i) for i in db.scalars(q.limit(limit))]
+
+
+class TrackPoint(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
+    lat: float = Field(ge=-90.0, le=90.0)
+    lon: float = Field(ge=-180.0, le=180.0)
+    alt_ft: float | None = None
+    ts: float  # epoch seconds
+
+
+class ScoreTrackRequest(BaseModel):
+    points: list[TrackPoint]
+
+
+# The frozen GRU runs torch at request time; cap concurrency so a burst can't exhaust the
+# free container's memory. Excess is shed as 503 rather than the process being OOM-killed.
+_inference_slots = threading.BoundedSemaphore(settings.api_max_concurrent_inference)
+
+
+@app.get("/model")
+def model_info() -> dict[str, Any]:
+    """What flagship model is served, and whether it is the benchmarked freeze.
+
+    `model_source` is trained-artifact when a frozen GRU is present, runtime-fallback when
+    none is — so a deployment scoring with no model is visible, never silent.
+    """
+    sha = artifact_sha256()
+    pinned = get_settings().anomaly_artifact_sha256
+    return {
+        "flagship": "GRU sequence autoencoder",
+        "model_source": "trained-artifact" if sha else "runtime-fallback",
+        "artifact_sha256": sha,
+        "sha_pinned": bool(pinned),
+        "sha_matches_pin": (sha == pinned) if (sha and pinned) else None,
+    }
+
+
+@app.post("/score-track")
+def score_track(req: ScoreTrackRequest) -> dict[str, Any]:
+    """Stateless trajectory-anomaly scoring of a pasted track.
+
+    Inspects ONLY the supplied points — never fetches a URL or reads the database — so the
+    API stays effectively read-only. Loads the frozen artifact and reports the reconstruction
+    error against the frozen population threshold, plus `model_source` so a runtime fallback
+    is explicit. An unusual shape is human-review decision support, never a verdict.
+    """
+    s = get_settings()
+    n = len(req.points)
+    if n < 2:
+        raise HTTPException(422, "need at least two points to form a track")
+    if n > s.score_track_max_points:
+        raise HTTPException(422, f"too many points (max {s.score_track_max_points})")
+
+    try:
+        raw = [(datetime.fromtimestamp(p.ts, tz=UTC), p.lat, p.lon, p.alt_ft) for p in req.points]
+        seq = sequence_from_points(raw, s)
+    except (OSError, OverflowError, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    sha = artifact_sha256()
+    if sha is None:
+        # No artifact baked/trained — say so rather than fabricating a score.
+        return {"model_source": "runtime-fallback", "scored": False, "detail": "no frozen model"}
+    if s.anomaly_artifact_sha256 and sha != s.anomaly_artifact_sha256:
+        return {
+            "model_source": "trained-artifact",
+            "scored": False,
+            "artifact_sha256": sha,
+            "detail": "frozen artifact does not match the configured SHA-256 pin",
+        }
+
+    # Loading torch state is part of inference and can briefly allocate as much memory as
+    # scoring. Acquire before loading so the concurrency guard covers the whole expensive
+    # path rather than allowing a burst of parallel deserializations.
+    if not _inference_slots.acquire(blocking=False):
+        raise HTTPException(503, "inference busy; retry shortly")
+    try:
+        model = load_model()
+        if model is None:  # Artifact disappeared between the SHA check and the load.
+            return {
+                "model_source": "runtime-fallback",
+                "scored": False,
+                "detail": "frozen model became unavailable",
+            }
+        error = float(model.errors([seq])[0])
+    finally:
+        _inference_slots.release()
+
+    return {
+        "model_source": "trained-artifact",
+        "scored": True,
+        "reconstruction_error": error,
+        "population_threshold": model.threshold,
+        "anomalous": error > model.threshold,
+        "artifact_sha256": artifact_sha256(),
+        "caveat": "unusual trajectory shape — human-review decision support, not a verdict",
+    }
 
 
 # Serve the built SPA when present (single-container deploy) — mounted last so API

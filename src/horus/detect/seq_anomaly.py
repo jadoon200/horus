@@ -10,6 +10,7 @@ so batch detection and API inference score with exactly the same model.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,20 @@ from torch import Tensor, nn
 
 N_FEATURES = 5  # [dlat_km, dlon_km, step_len_km, turn_rad, dalt_kft]
 ARTIFACT_PATH = Path("data/models/gru-air-anomaly.pt")
+
+
+def artifact_sha256(path: Path | None = None) -> str | None:
+    """SHA-256 of the frozen artifact file, or None if it does not exist.
+
+    The pin the deploy records so a served model is provably the benchmarked one — the
+    maritime sibling's freeze discipline. A drift between the served SHA and the recorded
+    one is visible rather than silent. The default path resolves at call time so an override
+    is honoured.
+    """
+    path = path or ARTIFACT_PATH
+    if not path.exists():
+        return None
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 class GRUAutoencoder(nn.Module):
@@ -59,7 +74,10 @@ class AnomalyModel:
                 out[i] = float(((recon - xt) ** 2).mean())
         return out
 
-    def save(self, path: Path = ARTIFACT_PATH) -> None:
+    def save(self, path: Path | None = None) -> None:
+        # Resolve the default at call time, not at def time, so an overridden ARTIFACT_PATH
+        # (config, tests) is honoured rather than frozen into the signature.
+        path = path or ARTIFACT_PATH
         path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(
             {
@@ -74,7 +92,8 @@ class AnomalyModel:
         )
 
 
-def load_model(path: Path = ARTIFACT_PATH) -> AnomalyModel | None:
+def load_model(path: Path | None = None) -> AnomalyModel | None:
+    path = path or ARTIFACT_PATH
     if not path.exists():
         return None
     blob: dict[str, Any] = torch.load(path, weights_only=False)

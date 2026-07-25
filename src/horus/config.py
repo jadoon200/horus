@@ -80,6 +80,14 @@ class Settings(BaseSettings):
     # means the fixes can't both be real (teleporting identity / bad data / spoof).
     spoof_max_speed_kt: float = 1_400.0
 
+    # --- Flagship anomaly model (served) ------------------------------------------------
+    # Optional SHA-256 pin for the frozen GRU artifact `/score-track` loads. When set, a
+    # mismatch is reported and scoring is refused so a served model cannot silently drift
+    # from the benchmarked freeze (the maritime sibling's discipline). Empty = no pin.
+    anomaly_artifact_sha256: str = ""
+    # Bound the stateless inference route's input so a pasted track can't balloon a request.
+    score_track_max_points: int = 4_000
+
     # --- API hardening for public deployment (safe local-dev defaults) ------------------
     api_allowed_origins: str = ""
     api_max_request_chars: int = 100_000
