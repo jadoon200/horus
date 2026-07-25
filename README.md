@@ -71,6 +71,10 @@ The air picture is drillable: area-level interference cells expose the corrobora
 aircraft, and each witness opens aligned NIC/NACp history on a fixed 0–11 scale. Missing
 integrity reports remain gaps rather than being drawn as false zeroes.
 
+CI has three independent lanes: the strict Python gate, the frontend build/lint gate, and
+an exact deployment-image build/boot smoke that verifies the baked synthetic data and
+frozen-model inference surface.
+
 ## Quickstart
 
 ```bash

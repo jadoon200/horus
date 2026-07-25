@@ -46,6 +46,7 @@ Honest status ledger — ✅ built & gated, 🔨 in progress, ⬜ planned.
 | V13 | Freeze + serve the selected GRU: versioned real-data artifact record, SHA pin enforcement, `/model` provenance, stateless `/score-track`, explainer interaction | ✅ 725-track SG-AIR-v1 freeze; deploy image smoke-tested |
 | V14 | Incident evidence drawer: cell → corroborating aircraft → aligned NIC/NACp history, plus aircraft-rollup drill-down | ✅ API-alignment test + frontend build/lint; browser verification pending final deploy pass |
 | V15 | Emergency-squawk notable-event channel: visit-grouped 7500/7600/7700, repeated-sample floor, incremental parity | ✅ synthetic 7700 detected; 1200/2000 quiet; 0 events over 120,342 real SG reports |
+| V16 | Deployment-image CI: build the exact Dockerfile, boot the baked demo, assert health/data/model/inference | ✅ independent smoke lane |
 
 **Live:** https://horus-kc7w.onrender.com (Render free tier, baked synthetic snapshot; keep-alive pings `/health`).
 

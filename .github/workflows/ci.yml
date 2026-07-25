@@ -61,3 +61,44 @@ jobs:
         run: |
           npm --prefix frontend run build
           npm --prefix frontend run lint
+
+  docker:
+    # The deploy image has its own dependency graph and bakes the synthetic DB/model.
+    # Keep this separate from the fast gates: a container-only breakage should be visible
+    # without delaying lint/type feedback.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build deployment image
+        run: docker build -f Dockerfile.web -t horus-web:ci .
+
+      - name: Boot and smoke the baked demo
+        run: |
+          set -euo pipefail
+          docker run --rm -d --name horus-smoke -p 8000:8000 \
+            -e HORUS_DEMO_MODE=true horus-web:ci
+          trap 'docker stop horus-smoke >/dev/null 2>&1 || true' EXIT
+
+          ready=false
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/health >/tmp/horus-health.json; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != true ]; then
+            docker logs horus-smoke
+            exit 1
+          fi
+
+          curl -fsS http://127.0.0.1:8000/stats |
+            python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["demo_mode"] is True and d["aircraft"] > 0'
+          curl -fsS http://127.0.0.1:8000/model |
+            python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["model_source"] == "trained-artifact" and d["artifact_sha256"]'
+          curl -fsS -H 'content-type: application/json' \
+            --data '{"points":[{"lat":1.2,"lon":103.6,"alt_ft":36000,"ts":0},{"lat":1.3,"lon":103.6,"alt_ft":36000,"ts":30}]}' \
+            http://127.0.0.1:8000/score-track |
+            python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["scored"] is True'
