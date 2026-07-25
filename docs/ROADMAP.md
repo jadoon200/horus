@@ -49,6 +49,7 @@ Honest status ledger — ✅ built & gated, 🔨 in progress, ⬜ planned.
 | V16 | Deployment-image CI: build the exact Dockerfile, boot the baked demo, assert health/data/model/inference | ✅ independent smoke lane |
 | V17 | Reliability-grade calibration against real-traffic plausibility proxies | ✅ 51 incidents audited; grades separate gap quality modestly but are descriptive, not calibrated, for one-grade incursion/jamming classes |
 | V18 | Spoof-threshold characterization over consecutive real fixes | ✅ 123,649 pairs; three >1,400-kt discontinuities form one review candidate; lowering to 750 kt adds nothing, so 1,400 kt retained |
+| V19 | Incursion-airway residual source spike | ✅ stopped at the data gate: OpenAIP has no ATS-route geometry; authoritative AIP reuse is not licence-compatible, so no geometry was fabricated and the confound remains disclosed |
 
 **Live:** https://horus-kc7w.onrender.com (Render free tier, baked synthetic snapshot; keep-alive pings `/health`).
 
