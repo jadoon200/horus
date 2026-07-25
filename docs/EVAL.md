@@ -162,6 +162,39 @@ regional codes (2000/1200) never fire. Even a confirmed visit remains C-grade ev
 codes can be selected in error, and HORUS reports the broadcast for human review rather
 than interpreting it as a hijack, radio failure, or emergency verdict.
 
+## Optional OpenSky coverage cross-check — implementation bound (2026-07-25)
+
+OpenSky's current API supports anonymous latest-state bounding-box queries (400 daily
+credits) and OAuth2 client credentials for a larger research quota. Its current terms,
+however, require a written agreement for any operational REST integration — even for a
+non-profit live system. HORUS therefore does **not** schedule OpenSky, call it from the API,
+or include it in the deployed demo.
+
+The opt-in research path is complete:
+
+- `horus.ingest.opensky` defensively parses state vectors, converts SI units, supports
+  anonymous or OAuth2 access, and leaves NIC/NACp/SIL missing rather than inventing fields;
+- `scripts/eval_opensky.py` requires `--acknowledge-opensky-terms`, takes one synchronized
+  adsb.lol/OpenSky snapshot over the same small box, and compares aircraft/cell coverage;
+- optional persisted samples use source `opensky` and a separate research region, with
+  deduplication scoped by source and region so they cannot displace the keyless lane.
+
+**The decisive technical bound:** OpenSky state vectors expose position and kinematics but
+not ADS-B NIC/NACp/SIL. Additional OpenSky aircraft may measure receiver-coverage holes,
+but they cannot make a HORUS interference cell scoreable or corroborate an integrity
+collapse. The comparison reports any combined-aircraft density gain as *coverage potential
+only*.
+
+No live comparison number is published here: the project does not accept third-party terms
+on an operator's behalf. An operator who has reviewed the current OpenSky agreement can run:
+
+```bash
+python -m scripts.eval_opensky --acknowledge-opensky-terms --write
+```
+
+This completes the optional adapter without weakening the zero-cost, keyless adsb.lol core
+or quietly turning a research API into an operational dependency.
+
 ## Incursion-airway source spike — stopped at the data gate (2026-07-25)
 
 The post-triage incursion residual is dominated by regional airliners using the low
