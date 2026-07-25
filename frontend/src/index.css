@@ -58,12 +58,13 @@ a { color: var(--indigo-bright); }
   font-weight: 500;
 }
 
-.tabs { display: flex; gap: 6px; }
+.tabs { display: flex; gap: 6px; margin-left: auto; }
 .tab {
   background: none;
   border: 1px solid transparent;
   color: var(--text-dim);
   font-size: 13.5px;
+  font-weight: 600;
   padding: 7px 14px;
   border-radius: 8px;
   cursor: pointer;
@@ -75,7 +76,6 @@ a { color: var(--indigo-bright); }
   background: var(--bg-card);
 }
 
-.spacer { flex: 1; }
 .status-pill {
   font-size: 12px;
   color: var(--text-dim);
@@ -86,6 +86,12 @@ a { color: var(--indigo-bright); }
 .status-pill.ok { color: var(--green); }
 
 main { padding: 18px 22px 40px; max-width: 1400px; margin: 0 auto; }
+/* On narrow screens the masthead collapses the same way as the sibling siblings
+   (PHAROS / SENTINEL): brand + status stay on the first row, tabs drop to a scrollable row. */
+@media (max-width: 760px) {
+  .masthead { flex-wrap: wrap; gap: 10px; }
+  .tabs { margin-left: 0; width: 100%; overflow-x: auto; }
+}
 .foot {
   border-top: 1px solid var(--border);
   color: var(--text-dim);
