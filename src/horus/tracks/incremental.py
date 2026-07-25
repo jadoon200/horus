@@ -131,17 +131,23 @@ def refresh_recent_incidents(
     fresh.extend(detect_gaps(session, region, since=since))
     fresh.extend(detect_incursions(session, region, since=since))
     fresh.extend(detect_spoof(session, region, since=since))
-    squawks = detect_squawks(session, region, since=since)
-    # A long-running code can start before the rolling boundary. Its stable, time-scoped id
-    # must be replaced explicitly so extending the same visit updates rather than collides.
-    squawk_ids = [i.incident_id for i in squawks]
-    if squawk_ids:
-        session.execute(delete(Incident).where(Incident.incident_id.in_(squawk_ids)))
-    fresh.extend(squawks)
+    fresh.extend(detect_squawks(session, region, since=since))
 
-    # A detector may legitimately re-derive an id that another pass already added in this
-    # same transaction; keep one.
+    # Any detector can re-derive an incident whose stored row STARTS before the rolling
+    # boundary — a squawk visit, a watch-box dwell, a violation streak, or a silence
+    # straddling it. Those stable, time-scoped ids escape the window delete above, so they
+    # are replaced explicitly: extending the same event must update its row, never collide
+    # with it or sit beside it as a duplicate. (Also collapses an id two passes derived in
+    # this same transaction to one row.)
     unique = {i.incident_id: i for i in fresh}
+    if unique:
+        replace_q = delete(Incident).where(Incident.incident_id.in_(unique))
+        # Region-scoped like the window delete above: a per-aircraft id (gap/spoof/incursion/
+        # squawk) carries no region, so a shared ICAO24 collected under two regions can yield
+        # the same id in each. An sg-live cycle must never delete another region's incident.
+        if region:
+            replace_q = replace_q.where(Incident.region == region)
+        session.execute(replace_q)
     session.add_all(list(unique.values()))
     return len(unique)
 

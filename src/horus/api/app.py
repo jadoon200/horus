@@ -196,15 +196,18 @@ def tracks_geojson(
 ) -> dict[str, Any]:
     features = []
     for t in db.scalars(select(Track).order_by(Track.start_ts).limit(limit)):
-        positions = db.scalars(
-            select(Position)
-            .where(
-                Position.icao24 == t.icao24,
-                Position.ts >= t.start_ts,
-                Position.ts <= t.end_ts,
-            )
-            .order_by(Position.ts)
-        ).all()
+        pos_q = select(Position).where(
+            Position.icao24 == t.icao24,
+            Position.ts >= t.start_ts,
+            Position.ts <= t.end_ts,
+        )
+        # One ICAO24 can be persisted under more than one region (a live slice and a
+        # backfilled or OpenSky-research one) in the same database. Without this filter the
+        # track's rendered geometry merges both regions' fixes and zig-zags across the map;
+        # the track was gap-split within its own region, so its points are only that region's.
+        if t.region is not None:
+            pos_q = pos_q.where(Position.region == t.region)
+        positions = db.scalars(pos_q.order_by(Position.ts)).all()
         features.append(_track_geojson(t, [[p.lon, p.lat] for p in positions]))
     return {"type": "FeatureCollection", "features": features}
 

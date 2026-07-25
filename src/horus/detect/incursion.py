@@ -72,13 +72,30 @@ def _is_level(visit: list[Position], max_rate_fpm: float) -> bool:
 def detect_incursions(
     session: Session, region: str | None = None, *, since: datetime | None = None
 ) -> list[Incident]:
-    """Low-level watch-box incursions. `since` scopes the scan for the incremental lane."""
+    """Low-level watch-box incursions.
+
+    `since` scopes the scan for the incremental lane: aircraft with an in-box low-level
+    sample at or after the boundary are re-derived from their FULL history, so a visit
+    straddling the boundary keeps its true start — and therefore its id. Deriving from the
+    window alone re-emits the tail of such a visit under a new visit-start id beside the
+    stored full one — one duplicate per boundary crossing, reproduced before this path
+    existed. Visits that ended before the boundary are settled and skipped.
+    """
     s = get_settings()
     q = select(Position).where(Position.on_ground.is_(False)).order_by(Position.ts)
     if region:
         q = q.where(Position.region == region)
     if since is not None:
-        q = q.where(Position.ts >= since)
+        targets = {
+            p.icao24
+            for p in session.scalars(q.where(Position.ts >= since))
+            if (p.alt_baro_ft or 0.0) < s.incursion_max_altitude_ft
+            and any(z.kind in _INCURSION_KINDS for z in zones_containing(p.lat, p.lon))
+        }
+        if not targets:
+            log.info("detect_incursions", incidents=0)
+            return []
+        q = q.where(Position.icao24.in_(targets))
 
     # (icao24, zone_id) -> ordered in-box samples below the dedicated low floor. The floor is
     # incursion's own (5k), NOT the gap detector's 10k — the whole point of the triage.
@@ -93,6 +110,8 @@ def detect_incursions(
     incidents: list[Incident] = []
     for (icao24, zone_id), samples in hits.items():
         for visit in _visits(samples, s.incursion_visit_gap_minutes):
+            if since is not None and utc_naive(visit[-1].ts) < utc_naive(since):
+                continue  # settled before the refresh window; its stored incident stands
             if len(visit) < 3:
                 continue  # a clipped corner isn't a dwell
             if not _is_level(visit, s.incursion_max_level_rate_fpm):
