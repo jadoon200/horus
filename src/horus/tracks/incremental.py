@@ -34,6 +34,7 @@ from horus.detect.gaps import detect_gaps
 from horus.detect.incursion import detect_incursions
 from horus.detect.jamming import align_to_window, detect_jamming
 from horus.detect.spoof import detect_spoof
+from horus.detect.squawk import detect_squawks
 from horus.logging import get_logger
 from horus.timeutil import utc_naive
 from horus.tracks.build import segment_aircraft
@@ -114,7 +115,7 @@ def refresh_recent_incidents(
     """
     since = align_to_window(since, settings)
     del_q = delete(Incident).where(
-        Incident.detector.in_(("jamming", "gap", "incursion", "spoof")),
+        Incident.detector.in_(("jamming", "gap", "incursion", "spoof", "squawk")),
         Incident.ts_start >= since,
     )
     if region:
@@ -130,6 +131,13 @@ def refresh_recent_incidents(
     fresh.extend(detect_gaps(session, region, since=since))
     fresh.extend(detect_incursions(session, region, since=since))
     fresh.extend(detect_spoof(session, region, since=since))
+    squawks = detect_squawks(session, region, since=since)
+    # A long-running code can start before the rolling boundary. Its stable, time-scoped id
+    # must be replaced explicitly so extending the same visit updates rather than collides.
+    squawk_ids = [i.incident_id for i in squawks]
+    if squawk_ids:
+        session.execute(delete(Incident).where(Incident.incident_id.in_(squawk_ids)))
+    fresh.extend(squawks)
 
     # A detector may legitimately re-derive an id that another pass already added in this
     # same transaction; keep one.

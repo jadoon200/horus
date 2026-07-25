@@ -22,6 +22,7 @@ TECH_DARK = "AT-DARK-AIRCRAFT"  # transponder silence at altitude with displacem
 TECH_INCURSION = "AT-ZONE-INCURSION"  # low-level entry into a watch/border box
 TECH_SPOOF = "AT-KINEMATIC-SPOOF"  # physically impossible kinematics / identity anomaly
 TECH_ANOMALY = "AT-TRAJ-ANOMALY"  # trajectory shape far from the learned pattern of life
+TECH_EMERGENCY = "AT-EMERGENCY-SQUAWK"  # repeated aircraft self-reported emergency code
 
 
 def severity_for(score: float) -> str:

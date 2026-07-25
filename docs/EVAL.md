@@ -150,6 +150,18 @@ this project does not have. Precision is bounded by that airway overlap, exactly
 maritime sibling's loitering detector is bounded by anchorage clusters. That bound is the
 next honest limitation, not a solved problem.
 
+## Emergency-squawk channel over real traffic (2026-07-25)
+
+Across **120,342 Singapore reports spanning 42.96 hours**, the feed contained zero reports
+of 7500, 7600, or 7700 and the detector raised **zero notable events**. This is the expected
+base rate for rare aircraft self-reports, not evidence that the channel is ineffective.
+
+The synthetic gold set injects four consecutive 7700 reports and detects one visit. A lone
+emergency-code sample stays below the two-sample confirmation floor, while ordinary
+regional codes (2000/1200) never fire. Even a confirmed visit remains C-grade evidence:
+codes can be selected in error, and HORUS reports the broadcast for human review rather
+than interpreting it as a hijack, radio failure, or emergency verdict.
+
 ## Flagship anomaly model, decided on real tracks (2026-07-24)
 
 The synthetic gold set could not settle this and said so: there, two perfectly circular
@@ -357,6 +369,7 @@ Injected events are separable by construction; the informative read is the
 - **gap:** recall 1.0, precision 1.0 (expected ['d00001', 'd00002'], detected ['d00001', 'd00002'], FP [])
 - **incursion:** recall 1.0, precision 1.0 (expected ['e00001'], detected ['e00001'], FP [])
 - **spoof:** recall 1.0, precision 1.0 (expected ['f00bad'], detected ['f00bad'], FP [])
+- **squawk:** recall 1.0, precision 1.0 (expected ['a00000'], detected ['a00000'], FP [])
 - **Trajectory anomaly (44 tracks, 2 injected):** GRU AUC 0.9762 vs Isolation Forest 0.9762 vs linear PCA 1.0 (same unsupervised setup).
 - **Confounders:** low-altitude dropouts flagged as gaps: none; lone NIC dip in a jamming incident: none.
 <!-- AUTO-EVAL:END -->

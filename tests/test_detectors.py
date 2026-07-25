@@ -64,6 +64,12 @@ def test_detector_battery_on_gold_scenario() -> None:
         spoofs = {i.icao24 for i in incidents if i.detector == "spoof"}
         assert spoofs == {"f00bad"}
 
+        # --- emergency squawk: repeated 7700 only, never ordinary 2000 ----------------
+        squawks = [i for i in incidents if i.detector == "squawk"]
+        assert {i.icao24 for i in squawks} == {"a00000"}
+        assert all((i.evidence or {})["squawk"] == "7700" for i in squawks)
+        assert all(i.reliability == "C" for i in squawks)
+
 
 def test_air_picture_rollup_shape() -> None:
     with _seeded_session() as s:

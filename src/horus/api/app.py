@@ -103,7 +103,7 @@ def stats(db: Session = Depends(get_db)) -> dict[str, Any]:
     def _count(model: Any) -> int:
         return db.scalar(select(func.count()).select_from(model)) or 0
 
-    detectors = ("jamming", "gap", "incursion", "spoof", "anomaly")
+    detectors = ("jamming", "gap", "incursion", "spoof", "squawk", "anomaly")
     by_detector = {
         d: db.scalar(select(func.count()).select_from(Incident).where(Incident.detector == d)) or 0
         for d in detectors

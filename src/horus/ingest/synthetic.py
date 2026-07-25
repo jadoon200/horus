@@ -40,7 +40,7 @@ _KM_PER_DEG = 111.0
 class GoldLabel:
     """One injected event the detectors should find (or honestly miss)."""
 
-    kind: str  # jamming | gap | incursion | spoof | anomaly
+    kind: str  # jamming | gap | incursion | spoof | squawk | anomaly
     icao24: str | None  # None for the area-level jamming cell
     ts_start: datetime
     ts_end: datetime
@@ -172,6 +172,14 @@ def generate(seed: int = 7, n_cruise: int = 24, n_low: int = 5) -> SyntheticData
             alt_ft=rng.uniform(30_000, 40_000),
             jam_affected=True,  # degraded only if/while actually inside the cell+window
         )
+
+    # Emergency-code notable event: repeated 7700 on one otherwise ordinary cruise.
+    # Normal 2000 squawks throughout the rest of the population are the benign control.
+    for index, sample in enumerate(data.samples):
+        step = int((sample.ts - T0).total_seconds() / STEP_S)
+        if sample.icao24 == "a00000" and 30 <= step <= 33:
+            data.samples[index] = AdsbSample(**{**sample.__dict__, "squawk": "7700"})
+    add_label("squawk", "a00000", 30, 33)
 
     # Staged jam-cell transits: cruise flights whose start point is back-computed so each
     # crosses the cell centre mid-window (a fast jet clears the 0.7° cell in ~5 min, so a

@@ -62,7 +62,13 @@ def _score_per_aircraft(
     }
 
 
-_DETECTOR = {"gap": "gap", "incursion": "incursion", "spoof": "spoof", "anomaly": "anomaly"}
+_DETECTOR = {
+    "gap": "gap",
+    "incursion": "incursion",
+    "spoof": "spoof",
+    "squawk": "squawk",
+    "anomaly": "anomaly",
+}
 
 
 def evaluate(*, epochs: int = 60, seed: int = 7) -> dict[str, Any]:
@@ -116,7 +122,7 @@ def evaluate(*, epochs: int = 60, seed: int = 7) -> dict[str, Any]:
         }
 
         # --- per-aircraft deterministic detectors --------------------------------------
-        for kind in ("gap", "incursion", "spoof"):
+        for kind in ("gap", "incursion", "spoof", "squawk"):
             results[kind] = _score_per_aircraft(data.labels, incidents, kind)
 
         # --- anomaly: flagship vs fair baselines (unsupervised, ranked by AUC) ---------
@@ -169,7 +175,7 @@ def _render(results: dict[str, Any]) -> str:
         f"{jam['cells_unscoreable']}/{jam['cells_seen']} cells unscoreable "
         "(too few aircraft — skipped honestly, never scored).",
     ]
-    for kind in ("gap", "incursion", "spoof"):
+    for kind in ("gap", "incursion", "spoof", "squawk"):
         r = results[kind]
         lines.append(
             f"- **{kind}:** recall {r['recall']}, precision {r['precision']} "

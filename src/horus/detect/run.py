@@ -19,11 +19,12 @@ from horus.detect.gaps import detect_gaps
 from horus.detect.incursion import detect_incursions
 from horus.detect.jamming import JammingRunStats, detect_jamming
 from horus.detect.spoof import detect_spoof
+from horus.detect.squawk import detect_squawks
 from horus.logging import configure_logging, get_logger
 
 log = get_logger(__name__)
 
-_DETERMINISTIC = ("jamming", "gap", "incursion", "spoof")
+_DETERMINISTIC = ("jamming", "gap", "incursion", "spoof", "squawk")
 
 
 def run_detectors(session: Session, region: str | None = None) -> JammingRunStats:
@@ -34,6 +35,7 @@ def run_detectors(session: Session, region: str | None = None) -> JammingRunStat
     session.add_all(detect_gaps(session, region))
     session.add_all(detect_incursions(session, region))
     session.add_all(detect_spoof(session, region))
+    session.add_all(detect_squawks(session, region))
     return jam_stats
 
 
