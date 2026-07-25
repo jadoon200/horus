@@ -111,6 +111,45 @@ This mirrors the maritime sibling's first real-data run almost exactly (2,999 �
 after three domain-correct fixes), and for the same underlying reason: a detector tuned on
 generated data meets failure modes that only real operations contain.
 
+## Incursion false positives on real traffic (2026-07-25)
+
+The multi-day evaluation surfaced this one: the incursion detector *dominated* the mix — 80
+incidents over 18 h versus gap 11, jamming 2, spoof 0 — where a short window could not have
+shown it. Pulled up, the incidents were almost all **scheduled airliners**: A380s, 777s,
+787s, A350s on callsigns like ANA, British Airways, Citilink, Batik Air. Two root causes,
+both diagnosed from the data:
+
+- The detector borrowed the gap detector's **10,000 ft** floor, but the Riau watch box sits
+  under Changi/Batam approach airspace — so it caught the entire arrival stream passing just
+  under 10k (median flagged altitude was 9,375 ft).
+- "Dwell" was measured across an aircraft's *whole* span in the box, so a jet transiting
+  twice a day showed a **34-hour** dwell.
+
+Three domain-correct rules — a dedicated low floor (5,000 ft), splitting an aircraft's
+samples into contiguous **visits**, and requiring **roughly-level** flight (a jet
+climbing/descending through the box is on an approach or departure, the same insight as the
+dark-aircraft descent exclusion):
+
+| Stage | Calls | What was removed |
+|---|---:|---|
+| Raw (10k floor, any dwell) | 153 | — |
+| Dedicated 5,000 ft floor | 62 | **91** airliners passing above 5k on approach |
+| Roughly-level requirement | **17** | **45** aircraft descending/climbing through the box |
+
+**The exclusions cost no true positives:** the synthetic gold set still returns incursion
+recall 1.0 / precision 1.0 against its injected low-level track, and the benign confounders
+stay quiet.
+
+**The honest residual — recorded, not claimed away.** The 17 survivors still include
+regional airliners, because the box overlaps a busy low-level inter-island airway
+(Batam/Bintan). The rules remove the *demonstrable* false-positive class (approach/departure
+traffic) and the survivors trend toward the genuinely-notable — a helicopter (`A139`) and
+GA/private registrations (`N444KL`, `PKWAD`) surface among them — but distinguishing a
+regional airliner on the low airway from a GA aircraft crossing the border needs route data
+this project does not have. Precision is bounded by that airway overlap, exactly as the
+maritime sibling's loitering detector is bounded by anchorage clusters. That bound is the
+next honest limitation, not a solved problem.
+
 ## Flagship anomaly model, decided on real tracks (2026-07-24)
 
 The synthetic gold set could not settle this and said so: there, two perfectly circular

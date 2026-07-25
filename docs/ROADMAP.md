@@ -42,6 +42,7 @@ Honest status ledger — ✅ built & gated, 🔨 in progress, ⬜ planned.
 | V9 | Incremental live processing, so the dashboard is current rather than batch-stale | ✅ warm cycle bounded by the refresh window, not the corpus (6 h → 0.67 s); parity with full rebuild tested |
 | V10 | Live dashboard: interference heatmap with *unscoreable* as a first-class state, collector freshness in the masthead | ✅ browser-verified against the live lane |
 | V11 | Single-container deploy (Dockerfile.web + render.yaml, slim API runtime, baked synthetic seed; demo/snapshot mode; keep-alive) | ✅ **live** on Render, browser-verified |
+| V12 | Incursion false-positive triage (surfaced by the multi-day eval): dedicated low floor, contiguous visits, level-flight requirement | ✅ 153 → 17 real calls, gold-set unchanged; airway-overlap residual recorded |
 | V13 | Freeze + serve the selected GRU: versioned real-data artifact record, SHA pin enforcement, `/model` provenance, stateless `/score-track`, explainer interaction | ✅ 725-track SG-AIR-v1 freeze; deploy image smoke-tested |
 
 **Live:** https://horus-kc7w.onrender.com (Render free tier, baked synthetic snapshot; keep-alive pings `/health`).

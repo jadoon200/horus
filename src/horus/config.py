@@ -75,6 +75,23 @@ class Settings(BaseSettings):
     # lesson as anchored vessels being called ship-to-ship transfers.)
     gap_max_descent_fpm: float = -300.0
 
+    # --- Low-level watch-box incursion detector -----------------------------------------
+    # A genuine low-level cross-border profile is LOW — not an airliner passing under the gap
+    # detector's 10,000 ft floor on approach. Measured over real Singapore traffic (2026-07-25):
+    # the Riau box overlaps Changi/Batam terminal airspace, so the borrowed 10k floor caught
+    # the entire arrival stream — A380s, 777s, 787s on scheduled callsigns (ANA, BAW, Citilink).
+    # A dedicated, much lower floor is the first fix.
+    incursion_max_altitude_ft: float = 5_000.0
+    # Split an aircraft's in-box samples into contiguous visits at this silence, so "dwell" is
+    # a real continuous presence — not a span across a whole day of repeated transits (one
+    # airliner otherwise showed a 34-hour "dwell").
+    incursion_visit_gap_minutes: float = 15.0
+    # An aircraft climbing/descending through the box is transitioning to/from an airport (an
+    # approach or departure), not sustaining a low-level presence — the same insight as the
+    # dark-aircraft descent exclusion. Require the visit to be roughly level. Missing vertical
+    # rate fails OPEN (treated as level) so a genuine low-flyer isn't dropped on absent data.
+    incursion_max_level_rate_fpm: float = 500.0
+
     # --- Spoof / kinematic-impossibility detector ---------------------------------------
     # Faster than anything in civil traffic; an implied speed above this between fixes
     # means the fixes can't both be real (teleporting identity / bad data / spoof).
