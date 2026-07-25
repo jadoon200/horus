@@ -181,7 +181,11 @@ def aircraft_track(icao24: str, db: Session = Depends(get_db)) -> dict[str, Any]
         "properties": {
             "icao24": icao24,
             "n": len(positions),
+            # Integrity series stay index-aligned with timestamps. Missing reports remain
+            # null rather than becoming zero (which would fabricate a GNSS collapse).
+            "ts_series": [utc_naive(p.ts).isoformat() for p in positions],
             "nic_series": [p.nic for p in positions],
+            "nac_p_series": [p.nac_p for p in positions],
         },
     }
 
