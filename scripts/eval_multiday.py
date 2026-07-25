@@ -32,7 +32,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from horus.db.base import session_scope
-from horus.db.models import CoverageOutage, Incident, Position
+from horus.db.models import CollectorRun, CoverageOutage, Incident, Position
 from horus.detect.gaps import detect_gaps
 from horus.detect.incursion import detect_incursions
 from horus.detect.jamming import detect_jamming
@@ -84,6 +84,51 @@ def _hour_ceil(ts: datetime) -> datetime:
     return floor if ts == floor else floor + timedelta(hours=1)
 
 
+def merge_intervals(
+    intervals: list[tuple[datetime, datetime]],
+) -> list[tuple[datetime, datetime]]:
+    """Return the union of possibly overlapping closed-open time ranges."""
+    if not intervals:
+        return []
+    ordered = sorted(intervals)
+    merged = [ordered[0]]
+    for start, end in ordered[1:]:
+        previous_start, previous_end = merged[-1]
+        if start <= previous_end:
+            merged[-1] = (previous_start, max(previous_end, end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def outage_intervals(
+    session: Session,
+    region: str,
+    start: datetime,
+    end: datetime,
+) -> tuple[list[tuple[datetime, datetime]], int]:
+    """Return region-scoped, clipped outage union and the source-ledger row count."""
+    outages = list(
+        session.scalars(
+            select(CoverageOutage)
+            .join(CollectorRun, CoverageOutage.run_id == CollectorRun.id)
+            .where(CollectorRun.region == region)
+        )
+    )
+    clipped: list[tuple[datetime, datetime]] = []
+    overlapping_count = 0
+    for outage in outages:
+        opened_at = max(utc_naive(outage.opened_at), start)
+        closed_at = min(
+            utc_naive(outage.closed_at) if outage.closed_at else end,
+            end,
+        )
+        if closed_at > opened_at:
+            overlapping_count += 1
+            clipped.append((opened_at, closed_at))
+    return merge_intervals(clipped), overlapping_count
+
+
 def evaluate(
     session: Session, region: str
 ) -> tuple[list[HourStats], int, datetime | None, datetime | None]:
@@ -131,10 +176,8 @@ def evaluate(
             hours[key].incidents[inc.detector] += 1
 
     # Attribute ledgered outage minutes to the hours they fall in.
-    outages = list(session.scalars(select(CoverageOutage)))
-    for o in outages:
-        start = utc_naive(o.opened_at)
-        end = utc_naive(o.closed_at) if o.closed_at else hi
+    merged_outages, outage_count = outage_intervals(session, region, lo, hi)
+    for start, end in merged_outages:
         cur = _hour_floor(start)
         while cur <= end:
             nxt = cur + timedelta(hours=1)
@@ -143,7 +186,7 @@ def evaluate(
                 hours[cur].outage_minutes += overlap
             cur = nxt
 
-    return [hours[k] for k in sorted(hours)], len(outages), lo, hi
+    return [hours[k] for k in sorted(hours)], outage_count, lo, hi
 
 
 def aggregate_clock_hours(

@@ -9,11 +9,11 @@ Honest status ledger — ✅ built & gated, 🔨 in progress, ⬜ planned.
 | M2 | Synthetic generator: deterministic labelled gold set (jamming cells, gaps, incursions, spoofs, anomalies + benign confounders) | ✅ |
 | M3 | Track building: per-aircraft segmentation, resampling, kinematics, shape features + sequence descriptor | ✅ |
 | M4 | Detector ensemble: GNSS-interference flagship + gap + incursion + spoof; composite rollup + Admiralty-style reliability grading | ✅ |
-| M5 | Trajectory anomaly: GRU sequence autoencoder vs Isolation Forest / PCA baselines (fair, unsupervised setup) | ✅ (synthetic: PCA wins — recorded negative; real-data decision pending) |
+| M5 | Trajectory anomaly: GRU sequence autoencoder vs Isolation Forest / PCA baselines (fair, unsupervised setup) | ✅ real tracks decide it: Isolation Forest eliminated; GRU retained over PCA and frozen as SG-AIR-v1 |
 | M6 | Honest eval harness → docs/EVAL.md (synthetic = ceiling; live-data validation is the number that counts; recorded negatives) | ✅ |
 | M7 | Read-only hardened API + `/geoint/evidence`-shaped export for the ARGUS bridge | ✅ |
 | M8 | React + Leaflet dashboard: Air Picture map, Incidents feed, and a first-class "How it works" explainer view | ✅ browser-verified |
-| M9 | Live Singapore collection window + real-data validation write-up | ✅ first 12.5-min window measured (0 FPs, NIC baseline confirmed, 79.7% cells unscoreable); multi-day run still open |
+| M9 | Live Singapore collection window + real-data validation write-up | 🔨 first-window baseline complete; continuous capture is approaching the 48-hour multi-cycle gate with outage-aware aggregation ready |
 
 ## Design decisions already locked
 
@@ -44,7 +44,7 @@ Honest status ledger — ✅ built & gated, 🔨 in progress, ⬜ planned.
 | V11 | Single-container deploy (Dockerfile.web + render.yaml, slim API runtime, baked synthetic seed; demo/snapshot mode; keep-alive) | ✅ **live** on Render, browser-verified |
 | V12 | Incursion false-positive triage (surfaced by the multi-day eval): dedicated low floor, contiguous visits, level-flight requirement | ✅ 153 → 17 real calls, gold-set unchanged; airway-overlap residual recorded |
 | V13 | Freeze + serve the selected GRU: versioned real-data artifact record, SHA pin enforcement, `/model` provenance, stateless `/score-track`, explainer interaction | ✅ 725-track SG-AIR-v1 freeze; deploy image smoke-tested |
-| V14 | Incident evidence drawer: cell → corroborating aircraft → aligned NIC/NACp history, plus aircraft-rollup drill-down | ✅ API-alignment test + frontend build/lint; browser verification pending final deploy pass |
+| V14 | Incident evidence drawer: cell → corroborating aircraft → aligned NIC/NACp history, plus aircraft-rollup drill-down | ✅ API-alignment test + frontend build/lint; browser-verified against the live local lane with zero console errors |
 | V15 | Emergency-squawk notable-event channel: visit-grouped 7500/7600/7700, repeated-sample floor, incremental parity | ✅ synthetic 7700 detected; 1200/2000 quiet; 0 events over 120,342 real SG reports |
 | V16 | Deployment-image CI: build the exact Dockerfile, boot the baked demo, assert health/data/model/inference | ✅ independent smoke lane |
 | V17 | Reliability-grade calibration against real-traffic plausibility proxies | ✅ 51 incidents audited; grades separate gap quality modestly but are descriptive, not calibrated, for one-grade incursion/jamming classes |
