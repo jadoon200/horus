@@ -275,3 +275,91 @@ def test_coverage_exit_only_applies_inside_the_configured_circle() -> None:
     assert _could_have_left_coverage(54.9, 20.5, 450.0, 12.0, s) is False
     # Near the Singapore centre with a long gap: the geometry legitimately applies.
     assert _could_have_left_coverage(1.4, 103.9, 450.0, 600.0, s) is True
+
+
+def _incursion_session():  # type: ignore[no-untyped-def]
+    from horus.db.models import Aircraft
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    s = Session(engine)
+    s.add(Aircraft(icao24="air01"))
+    return s
+
+
+def _riau_point(icao, minute, alt, rate):  # type: ignore[no-untyped-def]
+    from datetime import UTC, datetime, timedelta
+
+    from horus.db.models import Position
+
+    # Inside the riau-border-watch box (0.50-1.10 lat, 103.80-104.70 lon).
+    return Position(
+        icao24=icao,
+        ts=datetime(2026, 7, 24, 12, 0, tzinfo=UTC) + timedelta(minutes=minute),
+        lat=0.9,
+        lon=104.2,
+        alt_baro_ft=alt,
+        baro_rate_fpm=rate,
+        region="sg-live",
+    )
+
+
+def test_incursion_ignores_airliner_descending_through_the_box() -> None:
+    """A jet on approach descends through the box — an approach/departure, not a low dwell.
+
+    Diagnosed from real Singapore traffic: the Riau box overlaps Changi/Batam approach
+    airspace, so the naive detector flagged A380s/777s on scheduled callsigns. A steep
+    vertical rate marks the transition and must exclude it.
+    """
+    from horus.detect.incursion import detect_incursions
+
+    with _incursion_session() as s:
+        # Below the 5,000 ft floor but descending hard (approach): must NOT fire.
+        for m in range(5):
+            s.add(_riau_point("air01", m, 4500 - m * 200, -1400))
+        s.commit()
+        assert detect_incursions(s, "sg-live") == []
+
+
+def test_incursion_fires_on_sustained_level_low_flight() -> None:
+    """A genuine low-level cross-border profile: low, roughly level, sustained."""
+    from horus.detect.incursion import detect_incursions
+
+    with _incursion_session() as s:
+        for m in range(6):
+            s.add(_riau_point("air01", m, 3000, 0))
+        s.commit()
+        incs = detect_incursions(s, "sg-live")
+        assert len(incs) == 1
+        assert incs[0].evidence is not None
+        assert incs[0].evidence["max_alt_ft"] <= 5000
+
+
+def test_incursion_ignores_traffic_above_the_low_floor() -> None:
+    """An airliner passing at 8,000 ft is above the dedicated 5,000 ft floor — ignored."""
+    from horus.detect.incursion import detect_incursions
+
+    with _incursion_session() as s:
+        for m in range(6):
+            s.add(_riau_point("air01", m, 8000, 0))  # level but not low
+        s.commit()
+        assert detect_incursions(s, "sg-live") == []
+
+
+def test_incursion_dwell_is_per_visit_not_a_day_long_span() -> None:
+    """Two separate transits must be two visits, each with its own short dwell.
+
+    Before contiguous-visit segmentation, an aircraft transiting the box morning and evening
+    produced one incident with a many-hour 'dwell' spanning the gap between them.
+    """
+    from horus.detect.incursion import detect_incursions
+
+    with _incursion_session() as s:
+        for m in range(4):  # morning transit
+            s.add(_riau_point("air01", m, 3000, 0))
+        for m in range(4):  # evening transit, hours later
+            s.add(_riau_point("air01", 600 + m, 3000, 0))
+        s.commit()
+        incs = detect_incursions(s, "sg-live")
+        assert len(incs) == 2, "two visits, not one span across the gap"
+        assert all((i.evidence or {})["dwell_minutes"] < 60 for i in incs)
