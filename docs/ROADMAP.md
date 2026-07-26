@@ -13,7 +13,7 @@ Honest status ledger — ✅ built & gated, 🔨 in progress, ⬜ planned.
 | M6 | Honest eval harness → docs/EVAL.md (synthetic = ceiling; live-data validation is the number that counts; recorded negatives) | ✅ |
 | M7 | Read-only hardened API + `/geoint/evidence`-shaped export for the ARGUS bridge | ✅ |
 | M8 | React + Leaflet dashboard: Air Picture map, Incidents feed, and a first-class "How it works" explainer view | ✅ browser-verified |
-| M9 | Live Singapore collection window + real-data validation write-up | 🔨 first-window baseline complete; continuous capture is approaching the 48-hour multi-cycle gate with outage-aware aggregation ready |
+| M9 | Live Singapore collection window + real-data validation write-up | ✅ 75.8 h continuous snapshot; outage-aware clean-clock two-cycle evaluation recorded across all 24 SGT hours |
 
 ## Design decisions already locked
 
@@ -27,7 +27,7 @@ Honest status ledger — ✅ built & gated, 🔨 in progress, ⬜ planned.
 - Mirrors PHAROS architecture/conventions deliberately (tracks → detectors → composite →
   map), so the pair reads as one joint air + sea domain-awareness system.
 
-## v2 — in progress
+## v2 — complete
 
 | # | Milestone | Status |
 |---|-----------|--------|
@@ -36,7 +36,7 @@ Honest status ledger — ✅ built & gated, 🔨 in progress, ⬜ planned.
 | V3 | Two-channel hard-loss tier (NIC 0 corroborated by NACp 0) — measured over real interference, degradation is near-binary rather than gradual | ✅ |
 | V4 | Multi-resolution scoring — sky too sparse for a fine cell falls through to a coarser one; unscoreable 83.0% → 23.7% with no new false positives | ✅ |
 | V5 | Positive/negative control evaluation — the same detector over a known-interference sky and a clean one, identical parameters | ✅ 15 incidents vs 0, simultaneous windows |
-| V6 | Multi-day Singapore window: diurnal unscoreable curve, per-detector false-positive rate | ✅ 18 h span: unscoreable tracks the traffic trough (20% peak → 35% quiet); surfaced incursion over-firing as the next FP triage |
+| V6 | Multi-day Singapore window: diurnal unscoreable curve, per-detector review-call rate | ✅ 75.8 h clean-clock curve: busiest 16:00 SGT averaged 6,606 reports / 21.4% unscoreable; quietest 04:00 averaged 1,470 / 33.2%; detector rates recorded without treating calls as labels |
 | V7 | Decide the flagship anomaly model on real tracks | ✅ Isolation Forest eliminated (separation 1.21); GRU retained over PCA on separation 4.43 vs 3.99; the synthetic negative does not reproduce |
 | V8 | Coverage/plausibility model for the transponder-gap detector | ✅ real-data FP triage: 85 → 4 calls (outage ledger, descent, boundary-exit), true positives unchanged |
 | V9 | Incremental live processing, so the dashboard is current rather than batch-stale | ✅ warm cycle bounded by the refresh window, not the corpus (6 h → 0.67 s); parity with full rebuild tested |

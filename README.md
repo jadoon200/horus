@@ -13,15 +13,14 @@ fused into a composite air picture over the Singapore FIR neighbourhood.
 > above it — together a joint air + sea domain picture over the world's busiest strait.
 > Named for the falcon-eyed sky god (a deliberate pair with PHAROS's Alexandrian lighthouse).
 
-> **Status: core system built, gated, and exercised on real ADS-B.** Collection, track
-> building, the six-detector battery (GNSS-interference flagship), the composite air
-> picture, the honest eval harness, the read-only API + ARGUS evidence bridge, and the
-> explainer-first React/Leaflet dashboard are all in place — 99 tests, mypy strict,
-> browser-verified. A first live 12.5-minute Singapore window (54 aircraft, 796 reports)
-> raised **zero false positives** and confirmed the NIC baseline on real traffic, while
-> exposing the method's real bound: **83.3% of cells were too sparse to score**. Numbers,
-> including what that window does *not* establish, are in [docs/EVAL.md](docs/EVAL.md);
-> progress in [docs/ROADMAP.md](docs/ROADMAP.md).
+> **Status: v2 next stage complete, gated, merged, and exercised on real ADS-B.** Collection,
+> the six-detector battery, frozen GRU inference, composite picture, read-only API + ARGUS
+> evidence bridge, joint HORUS/PHAROS review, and explainer-first dashboard are in place —
+> 99 tests, strict mypy, three CI lanes, and browser verification. A fixed evaluation
+> snapshot spans **75.8 hours / 253,935 positions / 1,600 aircraft** and clears the stricter
+> clean-clock two-cycle gate after excluding outage-distorted hours. Exact results and
+> limitations are in [docs/EVAL.md](docs/EVAL.md); the completed milestone ledger is in
+> [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Why the air domain, why GNSS interference
 
