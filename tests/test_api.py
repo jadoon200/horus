@@ -337,3 +337,23 @@ def test_score_track_rejects_degenerate_input(client: TestClient) -> None:
     assert client.post("/score-track", json=duplicate).status_code == 422
     out_of_bounds = {"points": [{**p, "lat": 91.0} for p in _demo_track_points()[:2]]}
     assert client.post("/score-track", json=out_of_bounds).status_code == 422
+
+
+def test_score_track_rejects_non_finite_coordinates_cleanly(client: TestClient) -> None:
+    """A pasted track with an inf/NaN coordinate must be a clean 422, never a 500.
+
+    The model already rejects non-finite floats (`allow_inf_nan=False`), but FastAPI's default
+    validation-error body echoes the offending value — and inf/NaN aren't JSON-serializable, so
+    the 422 itself failed to encode and surfaced as a 500. Sent as raw content because a JSON
+    client can't serialize inf either.
+    """
+    for bad in ("1e999", "NaN", "-1e999"):
+        body = (
+            f'{{"points":[{{"lat":{bad},"lon":103.8,"ts":0}},{{"lat":1.4,"lon":103.9,"ts":30}}]}}'
+        )
+        resp = client.post(
+            "/score-track", content=body, headers={"content-type": "application/json"}
+        )
+        assert resp.status_code == 422, f"{bad} lat should be a clean 422, got {resp.status_code}"
+        # The 422 body itself must be valid JSON (the whole point of the fix).
+        assert "detail" in resp.json()

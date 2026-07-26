@@ -9,6 +9,7 @@ Incidents are decision support for human review, never automated verdicts.
 
 from __future__ import annotations
 
+import math
 import threading
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager
@@ -17,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -78,6 +80,29 @@ async def _rate_limit(
     if not _rate_limiter.allow(request):
         return JSONResponse({"detail": "rate limit exceeded"}, status_code=429)
     return await call_next(request)
+
+
+def _scrub_non_finite(value: Any) -> Any:
+    """Replace inf/NaN floats with their string form so an error body can be JSON-encoded."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    if isinstance(value, dict):
+        return {k: _scrub_non_finite(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_scrub_non_finite(v) for v in value]
+    return value
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Return a clean 422 even when the rejected input carried a non-finite float.
+
+    A pasted /score-track with an inf/NaN coordinate is correctly rejected by the model's
+    `allow_inf_nan=False`, but FastAPI's default handler echoes the offending value in the
+    error body — and inf/NaN are not JSON, so serializing the 422 itself raised and surfaced
+    as a 500. Scrubbing the echoed values keeps the rejection a clean 422.
+    """
+    return JSONResponse(status_code=422, content={"detail": _scrub_non_finite(exc.errors())})
 
 
 def get_db() -> Iterator[Session]:
