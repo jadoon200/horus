@@ -430,35 +430,54 @@ being implied.
 
 ## Diurnal behaviour over the continuous Singapore lane
 
-A single continuous span of **19.0 h** (Singapore is UTC+8, so this crosses one local midnight). This shows the *shape* of the day — it is one partial cycle, not a multi-day average, and no stable diurnal law is claimed from n=1.
+A continuous span of **75.8 h** from `2026-07-23T14:19:27.577000` to
+`2026-07-26T18:08:38.907000`.
 
-**Coverage honesty:** 8 ledgered outages totalling ~209 min (host sleep). Hours with material outage are flagged `*`; a low incident count there is our own silence, not a quiet sky.
+**Coverage honesty:** 49 ledgered outages totalling ~705 min (host sleep). Buckets with ≥5
+outage minutes and the partial first/last UTC hours are excluded from the cross-day curve; a
+low count during our silence is not a quiet sky.
 
-| UTC hour | Reports | Aircraft | Unscoreable | jam | gap | incur | spoof | Outage |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| 14:00 | 796 | 54 | 15/96 (16%) | 0 | 0 | 0 | 0 | 28m `*` |
-| 15:00 | 757 | 44 | 33/74 (45%) | 0 | 1 | 1 | 0 | 42m `*` |
-| 16:00 | 2,747 | 93 | 81/242 (33%) | 0 | 0 | 2 | 0 | 0m |
-| 17:00 | 1,677 | 68 | 66/187 (35%) | 0 | 0 | 3 | 0 | 0m |
-| 18:00 | 1,686 | 63 | 96/203 (47%) | 0 | 0 | 4 | 0 | 0m |
-| 19:00 | 1,855 | 59 | 49/196 (25%) | 1 | 0 | 0 | 0 | 0m |
-| 20:00 | 1,276 | 60 | 61/175 (35%) | 0 | 1 | 0 | 0 | 0m |
-| 21:00 | 2,875 | 81 | 65/239 (27%) | 0 | 0 | 2 | 0 | 0m |
-| 22:00 | 3,008 | 102 | 64/240 (27%) | 0 | 1 | 6 | 0 | 0m |
-| 23:00 | 4,209 | 133 | 81/334 (24%) | 0 | 1 | 5 | 0 | 0m |
-| 00:00 | 513 | 69 | 31/95 (33%) | 0 | 0 | 2 | 0 | 85m `*` |
-| 01:00 | 1,346 | 121 | 40/186 (22%) | 0 | 0 | 2 | 0 | 54m `*` |
-| 02:00 | 5,516 | 196 | 78/353 (22%) | 1 | 0 | 13 | 0 | 0m |
-| 03:00 | 4,952 | 170 | 86/336 (26%) | 0 | 0 | 12 | 0 | 0m |
-| 04:00 | 4,899 | 169 | 79/313 (25%) | 0 | 3 | 10 | 0 | 0m |
-| 05:00 | 5,224 | 188 | 75/336 (22%) | 0 | 3 | 4 | 0 | 0m |
-| 06:00 | 6,657 | 213 | 78/384 (20%) | 0 | 0 | 7 | 0 | 0m |
-| 07:00 | 6,387 | 209 | 85/346 (25%) | 0 | 1 | 7 | 0 | 0m |
-| 08:00 | 53 | 53 | 10/27 (37%) | 0 | 0 | 0 | 0 | 0m |
+This crosses the **48-hour / two-cycle bar**. The table is a cross-day Singapore-clock mean
+± population standard deviation (SD), not the earlier single partial-cycle trace. `n` is
+visible because outage-affected clock hours can still have only one clean observation.
 
-**The prediction the data can check:** thinner traffic → more unscoreable sky. Busiest hour 06:00Z (6,657 reports) was 20% unscoreable; quietest 08:00Z (53 reports) was 37%. The trough is blinder, as expected.
+| SGT hour | Clean days (n) | Reports, mean ± SD | Unscoreable, mean ± SD |
+|---|---:|---:|---:|
+| 00:00 | 3 | 2,480 ± 276 | 28.6% ± 5.5 pp |
+| 01:00 | 3 | 1,565 ± 244 | 33.9% ± 1.1 pp |
+| 02:00 | 2 | 1,734 ± 48 | 42.5% ± 4.8 pp |
+| 03:00 | 2 | 1,787 ± 68 | 28.5% ± 3.5 pp |
+| 04:00 | 3 | 1,470 ± 139 | 33.2% ± 4.1 pp |
+| 05:00 | 2 | 2,620 ± 256 | 25.5% ± 1.7 pp |
+| 06:00 | 2 | 2,972 ± 36 | 23.4% ± 3.3 pp |
+| 07:00 | 2 | 4,164 ± 45 | 25.1% ± 0.9 pp |
+| 08:00 | 1 | 3,977 ± 0 | 25.6% ± 0.0 pp |
+| 09:00 | 1 | 4,124 ± 0 | 23.0% ± 0.0 pp |
+| 10:00 | 3 | 5,509 ± 107 | 20.8% ± 1.6 pp |
+| 11:00 | 3 | 4,856 ± 297 | 19.7% ± 4.2 pp |
+| 12:00 | 3 | 4,955 ± 44 | 20.9% ± 3.2 pp |
+| 13:00 | 3 | 5,290 ± 78 | 22.1% ± 1.0 pp |
+| 14:00 | 3 | 6,461 ± 482 | 19.4% ± 2.4 pp |
+| 15:00 | 3 | 6,500 ± 402 | 22.8% ± 1.3 pp |
+| 16:00 | 2 | 6,606 ± 38 | 21.4% ± 1.0 pp |
+| 17:00 | 2 | 6,009 ± 431 | 23.2% ± 1.6 pp |
+| 18:00 | 2 | 5,386 ± 246 | 21.7% ± 5.5 pp |
+| 19:00 | 2 | 5,458 ± 100 | 22.8% ± 1.5 pp |
+| 20:00 | 2 | 5,083 ± 256 | 23.9% ± 1.3 pp |
+| 21:00 | 2 | 4,742 ± 538 | 23.9% ± 2.8 pp |
+| 22:00 | 3 | 3,680 ± 139 | 23.0% ± 3.3 pp |
+| 23:00 | 2 | 2,540 ± 184 | 28.3% ± 4.3 pp |
 
-**Detector mix over the span:** jamming 2, gap 11, incursion 80, spoof 0. The **incursion** detector dominates, which — as with the dark-aircraft story — reads as an over-firing class to triage next, not a genuine surge: routine low-level traffic near the border watch box is the likely explanation, and it is the maritime sibling's loitering-false-positive lesson repeating in the air. Recorded here as the next investigation, not silently tuned away.
+**The prediction the data can check:** thinner traffic → more unscoreable sky. The cross-day
+busiest clock hour was 16:00 SGT (6,606 reports/h), averaging 21.4% unscoreable; the quietest
+was 04:00 SGT (1,470 reports/h), averaging 33.2%. The traffic trough remains blinder across
+days.
+
+**Detector mix over the span:** jamming 2, gap 113, incursion 28, spoof 1. Review-call rates
+per 24 h: jamming 0.6, gap 35.8, incursion 8.9, spoof 0.3. The **gap** detector is the largest
+class. These are review calls, not confirmed hostile events; detector-specific plausibility
+audits elsewhere in this report decide whether a class is over-firing.
+
 ## Real ADS-B — first live Singapore window (2026-07-23)
 
 A 12.5-minute keyless `adsb.lol` collection over the Singapore FIR
