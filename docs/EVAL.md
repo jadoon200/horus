@@ -113,8 +113,8 @@ generated data meets failure modes that only real operations contain.
 
 ## Incursion false positives on real traffic (2026-07-25)
 
-The multi-day evaluation surfaced this one: the incursion detector *dominated* the mix — 80
-incidents over 18 h versus gap 11, jamming 2, spoof 0 — where a short window could not have
+The initial extended 18-hour trace surfaced this one: the incursion detector *dominated* the
+mix — 80 incidents versus gap 11, jamming 2, spoof 0 — where a short window could not have
 shown it. Pulled up, the incidents were almost all **scheduled airliners**: A380s, 777s,
 787s, A350s on callsigns like ANA, British Airways, Citilink, Batik Air. Two root causes,
 both diagnosed from the data:
@@ -508,10 +508,11 @@ anchored to a fixed epoch rather than the corpus minimum, which re-cuts window b
 The earlier figures for this same window were 59/74 = 79.7%. Detection outcomes on the
 synthetic gold set were unchanged by the fix.)
 
-**What this window does not establish:** trajectory-anomaly quality on real
-tracks (37 tracks over 12.5 minutes is too few and too short to train the GRU
-honestly), or any behaviour across a diurnal cycle. Those need a multi-day
-collection and are not claimed here.
+**What this window did not establish on its own:** trajectory-anomaly quality on real
+tracks (37 tracks over 12.5 minutes was too few and too short to train the GRU honestly),
+or behaviour across a diurnal cycle. Those questions are addressed by the later real-track
+anomaly evaluation and clean-clock cross-day section above; this narrow first-window result
+remains for provenance.
 
 Reproduce:
 
@@ -552,5 +553,5 @@ Injected events are separable by construction; the informative read is the
   noise; the honest map says "no data" where there is no data.
 - **What would change these numbers:** real ADS-B has heterogeneous NIC baselines by
   airframe/equipage, coverage seams, and MLAT-derived positions — false-positive
-  pressure the gold set cannot simulate. The live Singapore collection window is the
-  actual test.
+  pressure the gold set cannot simulate. The continuous Singapore lane and controlled
+  live comparison are the actual tests.

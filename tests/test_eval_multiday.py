@@ -90,6 +90,19 @@ def test_render_switches_to_multi_cycle_table_only_at_48_hours() -> None:
     assert "| 00:00 | 2 |" in ready
 
 
+def test_render_withholds_cross_day_table_when_clean_clock_hour_is_missing() -> None:
+    start = datetime(2026, 7, 23, 0)
+    rows = [_row(start + timedelta(hours=hour), reports=1000, unscoreable=20) for hour in range(48)]
+    rows[0].outage_minutes = 5
+    rows[24].outage_minutes = 5
+
+    rendered = render(rows, 2, start, start + timedelta(hours=48))
+
+    assert "raw span has crossed **48 hours**" in rendered
+    assert "missing clean hours: 08:00" in rendered
+    assert "crosses the **48-hour / two-cycle bar**" not in rendered
+
+
 def test_merge_intervals_unions_overlaps_and_touching_ranges() -> None:
     start = datetime(2026, 7, 23, 0)
 
