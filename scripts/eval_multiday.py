@@ -258,6 +258,7 @@ def render(
     total_out = sum(r.outage_minutes for r in rows)
     aggregates = aggregate_clock_hours(rows, start, end)
     multi_cycle = span_h >= 48 and len(aggregates) == 24
+    missing_clock_hours = sorted(set(range(24)) - {row.local_hour for row in aggregates})
     lines = [
         "## Diurnal behaviour over the continuous Singapore lane",
         "",
@@ -303,10 +304,22 @@ def render(
             ),
         ]
     else:
+        if span_h >= 48:
+            readiness = (
+                "The raw span has crossed **48 hours**, but the clean two-cycle coverage "
+                "bar is not yet met. Every Singapore clock hour needs at least one complete "
+                "bucket with <5 outage minutes and enough cell windows; missing clean hours: "
+                + ", ".join(f"{hour:02d}:00" for hour in missing_clock_hours)
+                + ". The dated trace remains visible and no cross-day stability claim is made."
+            )
+        else:
+            readiness = (
+                "This has **not** crossed the 48-hour / two-cycle bar. The dated trace below "
+                "is suggestive only; no cross-day stability claim is made."
+            )
         lines += [
             "",
-            "This has **not** crossed the 48-hour / two-cycle bar. The dated trace below is "
-            "suggestive only; no cross-day stability claim is made.",
+            readiness,
             "",
             "| UTC date/hour | Reports | Aircraft | Unscoreable | jam | gap | incur | spoof | "
             "Outage |",
