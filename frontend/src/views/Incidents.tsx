@@ -8,7 +8,19 @@ function IncidentCard({ i }: { i: Incident }) {
   const [open, setOpen] = useState(false)
   const meta = reliabilityMeta(i.reliability)
   return (
-    <div className="roll" onClick={() => setOpen(!open)}>
+    <div
+      className="roll"
+      role="button"
+      tabIndex={0}
+      aria-expanded={open}
+      onClick={() => setOpen(!open)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          setOpen(!open)
+        }
+      }}
+    >
       <div className="roll-head">
         <div className={`rating ${meta.tone}`} title={meta.label}>
           <span className="rv">{i.reliability}</span>
