@@ -47,6 +47,10 @@ class _CellWindow:
     # reports NACp 0 (measured), so NIC and NACp collapsing together is a much sharper
     # signature than either alone.
     worst_nac_p: dict[str, int] = field(default_factory=dict)
+    # Barometric altitude at each aircraft's worst-NIC sample — the moment being judged.
+    # Recorded so an incident can state whether its degraded population was at cruise or in
+    # terminal phase; it never affects whether the cell scores.
+    alt_at_worst_nic: dict[str, float] = field(default_factory=dict)
     ts_min: datetime | None = None
     ts_max: datetime | None = None
     # Region of the data that formed this cell, so an unscoped run still attributes the
@@ -109,6 +113,12 @@ def _accumulate(cw: _CellWindow, p: Position) -> None:
     prev = cw.worst_nic.get(p.icao24)
     if prev is None or p.nic < prev:
         cw.worst_nic[p.icao24] = p.nic
+        # Capture altitude from the same sample, so the recorded height is the one the
+        # aircraft was at when its integrity was worst — not an unrelated later fix.
+        if p.alt_baro_ft is not None:
+            cw.alt_at_worst_nic[p.icao24] = p.alt_baro_ft
+        else:
+            cw.alt_at_worst_nic.pop(p.icao24, None)
     if p.nac_p is not None:
         prev_nac = cw.worst_nac_p.get(p.icao24)
         if prev_nac is None or p.nac_p < prev_nac:
@@ -294,6 +304,15 @@ def _score_cell(
         and cw.worst_nac_p.get(a, s.gnss_hard_loss_nac_p) <= s.gnss_hard_loss_nac_p
     }
     hard_frac = len(hard_loss) / total
+    # Phase-of-flight context for the degraded population. A cell whose degraded aircraft
+    # were all low is consistent with an arrival stream sharing a benign local cause; the
+    # same fraction at cruise is not. Reported, never subtracted — see gnss_terminal_alt_ft.
+    # Rounded to 100 ft: this is phase-of-flight context, and foot-level precision on a
+    # barometric report would imply an accuracy the judgement does not rest on.
+    degraded_alts = sorted(
+        round(alt, -2) for a in degraded if (alt := cw.alt_at_worst_nic.get(a)) is not None
+    )
+    in_terminal = sum(1 for alt in degraded_alts if alt < s.gnss_terminal_alt_ft)
     assert cw.ts_min is not None and cw.ts_max is not None
     incidents.append(
         make_incident(
@@ -326,6 +345,17 @@ def _score_cell(
                 "cell_deg": cell_deg,
                 "resolution_level": level,
                 "window_minutes": s.gnss_window_minutes,
+                # Phase-of-flight of the degraded aircraft, as review context only. If most
+                # of them were in terminal phase, a reviewer should weigh a shared benign
+                # cause (an arrival stream) before calling interference.
+                "degraded_in_terminal_phase": in_terminal,
+                "degraded_altitude_known": len(degraded_alts),
+                "terminal_alt_ft": s.gnss_terminal_alt_ft,
+                "degraded_alt_ft_min": degraded_alts[0] if degraded_alts else None,
+                "degraded_alt_ft_median": (
+                    degraded_alts[len(degraded_alts) // 2] if degraded_alts else None
+                ),
+                "degraded_alt_ft_max": degraded_alts[-1] if degraded_alts else None,
             },
             region=cw.region or region,
         )

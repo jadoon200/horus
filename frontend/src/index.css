@@ -371,6 +371,16 @@ main { padding: 18px 22px 40px; max-width: 1400px; margin: 0 auto; }
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
+/* Reviewer context that qualifies the finding, set apart from the raw evidence rows. */
+.drawer-note {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--sky);
+  background: rgba(125, 165, 255, 0.07);
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.5;
+}
 .drawer-close {
   width: 34px;
   height: 34px;

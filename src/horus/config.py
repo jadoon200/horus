@@ -72,6 +72,14 @@ class Settings(BaseSettings):
     # Singapore 83% of cells were unscoreable — so sky that fails the minimum falls through
     # to a coarser level, and the level used is recorded on the incident. 0 disables.
     gnss_coarsen_levels: int = 2
+    # Review context ONLY — never filters. The jamming signature is "many aircraft degraded
+    # in the same place at the same time", and an arrival stream is also many aircraft in
+    # the same place at the same time, low and configured alike; the incursion detector was
+    # caught by exactly that correlated population before it gained a floor. Rather than
+    # suppress low traffic — real interference hurts most on approach, so a floor would
+    # blind the detector where it matters — each incident records how much of its degraded
+    # population was in terminal phase, and a reviewer judges it.
+    gnss_terminal_alt_ft: float = 10_000.0
 
     # --- Dark-aircraft (transponder gap) detector ---------------------------------------
     # The coverage confound is *worse* than AIS: low-altitude traffic drops out of

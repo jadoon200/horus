@@ -115,6 +115,34 @@ function RollupEvidence({ rollup }: { rollup: AircraftRollup }) {
   )
 }
 
+/** Plain-language phase-of-flight read on a jamming cell's degraded aircraft.
+ *
+ * The signature — many aircraft degraded together in one place — is also what an arrival
+ * stream looks like, so a reviewer needs to know at a glance whether the population was at
+ * cruise or on approach. The detector never filters on this; it only reports it.
+ */
+function phaseOfFlightNote(area: AreaIncident): string | null {
+  const num = (key: string): number | null =>
+    typeof area.evidence[key] === 'number' ? (area.evidence[key] as number) : null
+  const known = num('degraded_altitude_known')
+  const terminal = num('degraded_in_terminal_phase')
+  const floor = num('terminal_alt_ft')
+  const lo = num('degraded_alt_ft_min')
+  const hi = num('degraded_alt_ft_max')
+  if (known === null || terminal === null || floor === null || !known) return null
+
+  const ft = (v: number | null) => (v === null ? '?' : v.toLocaleString())
+  const band = lo === hi ? `${ft(lo)} ft` : `${ft(lo)}–${ft(hi)} ft`
+  const limit = floor.toLocaleString()
+  if (terminal === 0) {
+    return `Phase of flight: all ${known} degraded aircraft were above ${limit} ft (${band}) — cruise traffic, not an arrival stream sharing a benign local cause.`
+  }
+  if (terminal === known) {
+    return `Phase of flight: all ${known} degraded aircraft were below ${limit} ft (${band}) — weigh a shared approach/departure cause before reading this as interference.`
+  }
+  return `Phase of flight: ${terminal} of ${known} degraded aircraft were below ${limit} ft (${band}) — a mixed population; check whether the low ones share an approach path.`
+}
+
 function AreaEvidence({ area }: { area: AreaIncident }) {
   const rawWorst = area.evidence['worst_nic_by_aircraft']
   const worst =
@@ -127,9 +155,11 @@ function AreaEvidence({ area }: { area: AreaIncident }) {
       : [],
   )
   const [selected, setSelected] = useState<string | null>(worst[0]?.[0] ?? null)
+  const phase = phaseOfFlightNote(area)
 
   return (
     <>
+      {phase && <p className="drawer-note">{phase}</p>}
       <div className="evidence drawer-table">
         <table>
           <tbody>
