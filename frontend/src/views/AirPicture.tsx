@@ -192,6 +192,14 @@ export default function AirPicture() {
     [tracks.data],
   )
 
+  // Distinct resolutions actually drawn, finest first. The grid is multi-resolution — a cell
+  // too sparse to judge is retried doubled — so the map mixes box sizes on purpose; say so
+  // rather than leaving a viewer to read a big box as a bigger outage.
+  const cellSizes = useMemo(
+    () => [...new Set((coverage.data?.cells ?? []).map((c) => c.cell_deg))].sort((a, b) => a - b),
+    [coverage.data],
+  )
+
   const cov = coverage.data
   return (
     <div className="split">
@@ -213,6 +221,13 @@ export default function AirPicture() {
             <span className="cov-count">
               worst over {cov.window_hours} h · {cov.cells_unscoreable}/{cov.cells_total}{' '}
               unscoreable — fewer than {cov.min_aircraft} aircraft, so not judged
+            </span>
+          )}
+          {cellSizes.length > 1 && (
+            <span className="cov-count">
+              box size = scoring resolution ({cellSizes.map((d) => `${d}°`).join(' · ')}): the
+              grid starts fine and is doubled where too few aircraft flew to judge it, so a big
+              box is a coarser answer, not a bigger outage
             </span>
           )}
         </div>
@@ -273,6 +288,8 @@ export default function AirPicture() {
                       <b>Unscoreable</b> — at most {c.aircraft_observed} aircraft seen here
                       <br />
                       fewer than the minimum to judge; deliberately not scored
+                      <br />
+                      cell {c.cell_deg}°
                     </>
                   )}
                 </Tooltip>
