@@ -220,6 +220,66 @@ def test_hard_loss_tier_requires_both_integrity_channels() -> None:
         assert "aa0004" not in ev["hard_loss_aircraft"]
 
 
+def test_jamming_records_phase_of_flight_without_filtering_on_it() -> None:
+    """A degraded arrival stream and degraded cruise traffic look identical to the rule.
+
+    "Many aircraft degraded in the same place at the same time" is also a description of an
+    arrival stream — aircraft that are low, close together, and configured alike, so a
+    shared benign cause is plausible. The incursion detector was caught by exactly that
+    correlated population before it gained an altitude floor.
+
+    The jamming detector must NOT copy that floor: real interference hurts most on approach,
+    so filtering low traffic would blind it where it matters. It records the phase mix
+    instead, and a reviewer weighs it — so both cells below must still score.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from horus.db.models import Aircraft, Position
+    from horus.detect.jamming import detect_jamming
+
+    def evidence_for(alt_ft: float, region: str, lat: float) -> dict[str, object]:
+        engine = create_engine("sqlite://")
+        Base.metadata.create_all(engine)
+        base = datetime(2026, 7, 23, 12, 0, tzinfo=UTC)
+        with Session(engine) as s:
+            for n in range(4):
+                icao = f"bb{n:04d}"
+                s.add(Aircraft(icao24=icao))
+                for k in range(3):
+                    s.add(
+                        Position(
+                            icao24=icao,
+                            ts=base + timedelta(minutes=k),
+                            lat=lat,
+                            lon=20.5,
+                            alt_baro_ft=alt_ft,
+                            nic=0,
+                            nac_p=0,
+                            region=region,
+                        )
+                    )
+            s.commit()
+            incidents, _ = detect_jamming(s, region)
+            assert len(incidents) == 1, "phase of flight must never decide whether a cell scores"
+            ev = incidents[0].evidence
+            assert ev is not None
+            return dict(ev)
+
+    cruise = evidence_for(35_000.0, "baltic", 54.9)
+    assert cruise["degraded_altitude_known"] == 4
+    assert cruise["degraded_in_terminal_phase"] == 0
+    assert cruise["degraded_alt_ft_min"] == 35_000.0
+
+    # The same collapse, but from traffic on approach: scored identically, flagged as the
+    # population a reviewer should question.
+    approach = evidence_for(2_500.0, "baltic", 54.9)
+    assert approach["degraded_altitude_known"] == 4
+    assert approach["degraded_in_terminal_phase"] == 4
+    assert approach["degraded_alt_ft_max"] == 2_500.0
+    # Identical evidence strength: only the recorded phase context differs.
+    assert cruise["degraded_fraction"] == approach["degraded_fraction"]
+
+
 def test_jamming_until_bounds_the_scored_interval() -> None:
     """`until` exists so an evaluation can describe ONE bounded interval.
 
