@@ -164,9 +164,22 @@ def test_air_picture_and_evidence_shape(client: TestClient) -> None:
     assert "Human-review" in item["summary"]
 
 
-def test_gnss_coverage_reports_three_states(client: TestClient) -> None:
+def test_gnss_coverage_reports_three_states(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Unscoreable sky must be served as its own state, not omitted or implied clear."""
-    data = client.get("/gnss-coverage", params={"hours": 720}).json()
+    from horus.config import get_settings
+
+    # Read the whole snapshot rather than a wall-clock window. The synthetic scenario is
+    # anchored at a literal T0, so it eventually ages past even the endpoint's maximum
+    # window (720 h) and the request returns nothing — which failed this test for a reason
+    # unrelated to what it checks. Demo mode is the supported window-independent read.
+    get_settings.cache_clear()
+    monkeypatch.setenv("HORUS_DEMO_MODE", "true")
+    data = client.get("/gnss-coverage").json()
+    get_settings.cache_clear()
+    monkeypatch.delenv("HORUS_DEMO_MODE", raising=False)
+
     assert data["cells_total"] == data["cells_scoreable"] + data["cells_unscoreable"]
     assert data["cells_unscoreable"] > 0, "the scenario has sparse sky; it must be reported"
     assert data["min_aircraft"] >= 1
