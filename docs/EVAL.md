@@ -382,6 +382,18 @@ This makes inference reproducible for a given frozen artifact; it does **not** t
 unsupervised score into a label. The response says only that a trajectory is unusual
 relative to the training population and retains the human-review caveat.
 
+**A served scaler must define what a dead channel means.** Because the scaler is applied to
+tracks the training population never contained, a channel with no training variance needs an
+explicit rule. Clamping its divisor to a small epsilon is not one: the synthetic demo
+population holds altitude exactly constant, so the baked model divided `dalt_kft` by 1e-6 and
+scored an ordinary 2,000 ft descent at a reconstruction error of 1.9e8 against a threshold of
+13.26 — an instrument artefact, not a shape judgement, and exactly the kind of implausible
+extreme this project treats as a bug rather than a result. Constant channels now take unit
+scale. Training data sits at the mean on such a channel either way, so the network and the
+frozen threshold are bit-identical; only scored tracks that vary there change, and that
+descent now scores 0.0123 against the same threshold. The real-data freeze above is
+unaffected — Singapore tracks vary in altitude, so no channel of SG-AIR-v1 was ever dead.
+
 Reproduce the real-data freeze locally:
 
 ```bash
