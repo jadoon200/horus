@@ -237,6 +237,11 @@ def test_demo_mode_serves_the_whole_snapshot(
     assert demo["cells_total"] > 0
     assert demo["cells_total"] >= live["cells_total"]
 
+    # And it says so. Echoing the requested `hours` back had the dashboard captioning the
+    # baked snapshot "worst over 6 h" — an aggregation the demo never performed.
+    assert demo["window_hours"] is None
+    assert live["window_hours"] == 6
+
 
 def _demo_track_points():  # type: ignore[no-untyped-def]
     """A short straight demo track as score-track input points."""
