@@ -378,6 +378,22 @@ artifact's SHA and pin status; `POST /score-track` applies that exact frozen sca
 and threshold to supplied points. If `HORUS_ANOMALY_ARTIFACT_SHA256` is configured and does
 not match, scoring is refused rather than silently using a drifted model.
 
+**Two caveats on that SHA, both measured rather than assumed.**
+
+*It is a file identity, not a model identity.* `torch.save` writes the destination's basename
+as the archive's root directory (`gru-air-anomaly/data.pkl`), so the same weights, scaler and
+threshold saved under two names hash differently — verified by saving one loaded blob four
+times and getting four hashes. The pin therefore does what it is for, detecting drift or
+substitution of *this* file, but "same SHA" and "same model" are not interchangeable and a
+rename invalidates a recorded freeze. Which is why the demo seed was given its own filename
+rather than the real freeze being moved: `c3e218d0…` above stays valid.
+
+*The demo artifact and this one are deliberately separate files now.* They previously shared
+`data/models/gru-air-anomaly.pt`, so running `scripts.seed_demo` in a checkout holding the
+real freeze silently overwrote it. The synthetic model is written to
+`data/models/gru-air-demo.pt`, and the deploy sets `HORUS_ANOMALY_ARTIFACT_PATH` to it so the
+container still serves exactly what it baked.
+
 This makes inference reproducible for a given frozen artifact; it does **not** turn the
 unsupervised score into a label. The response says only that a trajectory is unusual
 relative to the training population and retains the human-review caveat.

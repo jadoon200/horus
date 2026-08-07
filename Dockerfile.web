@@ -18,7 +18,10 @@ WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    HORUS_DATABASE_URL=sqlite:////app/data/demo.db
+    HORUS_DATABASE_URL=sqlite:////app/data/demo.db \
+    # The seed bakes the SYNTHETIC model to its own path so it can never be confused with
+    # the real-data freeze; point the served route at what this image actually contains.
+    HORUS_ANOMALY_ARTIFACT_PATH=/app/data/models/gru-air-demo.pt
 
 COPY requirements-api.txt ./
 RUN pip install --upgrade pip && pip install -r requirements-api.txt

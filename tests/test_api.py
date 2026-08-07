@@ -12,6 +12,22 @@ from horus.detect.run import run_detectors
 from horus.ingest.synthetic import generate, seed_db
 
 
+@pytest.fixture(autouse=True)
+def _fresh_rate_limit() -> Iterator[None]:
+    """Give every test the full request budget.
+
+    The limiter is a module-level singleton keyed by client host, and TestClient presents one
+    host for the whole file — so the budget was shared across all tests and the module sat a
+    couple of requests below the 30/min cap. Adding any new API test tipped the ones after it
+    into 429s, which surface as a KeyError on the parsed body rather than anything that names
+    the real cause.
+    """
+    from horus.api.app import _rate_limiter
+
+    _rate_limiter._hits.clear()
+    yield
+
+
 @pytest.fixture(scope="module")
 def client() -> Iterator[TestClient]:
     engine = create_engine(
@@ -304,7 +320,12 @@ def test_score_track_needs_a_frozen_model_and_is_deterministic(
     model = train_model(seqs, epochs=15)
     artifact = tmp_path / "model.pt"
     model.save(artifact)
-    monkeypatch.setattr(seq_anomaly, "ARTIFACT_PATH", artifact)
+    # The served path comes from settings so the deploy can point at its baked synthetic
+    # model without the demo seed overwriting a real-data freeze at a shared filename.
+    from horus.config import get_settings
+
+    monkeypatch.setenv("HORUS_ANOMALY_ARTIFACT_PATH", str(artifact))
+    get_settings.cache_clear()
 
     body = {"points": _demo_track_points()}
     r1 = client.post("/score-track", json=body).json()
@@ -326,6 +347,7 @@ def test_score_track_needs_a_frozen_model_and_is_deterministic(
         assert client.get("/model").json()["sha_matches_pin"] is False
     finally:
         monkeypatch.delenv("HORUS_ANOMALY_ARTIFACT_SHA256")
+        monkeypatch.delenv("HORUS_ANOMALY_ARTIFACT_PATH", raising=False)
         get_settings.cache_clear()
 
 
@@ -335,11 +357,16 @@ def test_score_track_reports_fallback_without_an_artifact(
     monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
     """No frozen model → say so explicitly, never fabricate a score."""
-    from horus.detect import seq_anomaly
+    from horus.config import get_settings
 
-    monkeypatch.setattr(seq_anomaly, "ARTIFACT_PATH", tmp_path / "absent.pt")
-    r = client.post("/score-track", json={"points": _demo_track_points()}).json()
-    assert r["scored"] is False and r["model_source"] == "runtime-fallback"
+    monkeypatch.setenv("HORUS_ANOMALY_ARTIFACT_PATH", str(tmp_path / "absent.pt"))
+    get_settings.cache_clear()
+    try:
+        r = client.post("/score-track", json={"points": _demo_track_points()}).json()
+        assert r["scored"] is False and r["model_source"] == "runtime-fallback"
+    finally:
+        monkeypatch.delenv("HORUS_ANOMALY_ARTIFACT_PATH")
+        get_settings.cache_clear()
 
 
 def test_score_track_rejects_degenerate_input(client: TestClient) -> None:
@@ -370,3 +397,78 @@ def test_score_track_rejects_non_finite_coordinates_cleanly(client: TestClient) 
         assert resp.status_code == 422, f"{bad} lat should be a clean 422, got {resp.status_code}"
         # The 422 body itself must be valid JSON (the whole point of the fix).
         assert "detail" in resp.json()
+
+
+def test_aircraft_track_does_not_merge_two_regions() -> None:
+    """Two regions holding the same ICAO24 must not become one zig-zagging track.
+
+    /tracks already guarded against this; its per-aircraft sibling did not, so a live slice
+    and a backfilled or OpenSky-research slice of the same airframe were concatenated into
+    one LineString with their NIC/NACp series interleaved — an integrity history that never
+    happened.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from horus.db.models import Aircraft, Position
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine)
+    base = datetime(2026, 7, 24, tzinfo=UTC)
+    with Session(engine) as s:
+        s.add(Aircraft(icao24="abc123"))
+        for k in range(4):  # the live lane, over Singapore
+            s.add(
+                Position(
+                    icao24="abc123",
+                    ts=base + timedelta(seconds=30 * k),
+                    lat=1.3,
+                    lon=103.8,
+                    nic=8,
+                    nac_p=9,
+                    region="sg-live",
+                )
+            )
+        for k in range(3):  # a research slice of the same airframe, half a world away
+            s.add(
+                Position(
+                    icao24="abc123",
+                    ts=base + timedelta(seconds=15 * k),
+                    lat=54.9,
+                    lon=20.5,
+                    nic=0,
+                    nac_p=0,
+                    region="baltic-research",
+                )
+            )
+        s.commit()
+
+    def _override() -> Iterator[Session]:
+        db = factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    # The module-scoped `client` fixture owns this override; borrow it and give it back,
+    # rather than clearing and stranding every later test in the file.
+    previous = app.dependency_overrides.get(get_db)
+    app.dependency_overrides[get_db] = _override
+    try:
+        c = TestClient(app)
+        newest = c.get("/aircraft/abc123/track").json()
+        assert newest["properties"]["region"] == "sg-live", "defaults to the newest region"
+        assert newest["properties"]["n"] == 4
+        assert all(lat == 1.3 for _lon, lat, _alt in newest["geometry"]["coordinates"])
+        assert set(newest["properties"]["nic_series"]) == {8}
+
+        other = c.get("/aircraft/abc123/track", params={"region": "baltic-research"}).json()
+        assert other["properties"]["n"] == 3
+        assert set(other["properties"]["nic_series"]) == {0}
+    finally:
+        if previous is None:
+            app.dependency_overrides.pop(get_db, None)
+        else:
+            app.dependency_overrides[get_db] = previous

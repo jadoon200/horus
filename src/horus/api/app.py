@@ -191,10 +191,33 @@ def _track_geojson(track: Track, coords: list[list[float]]) -> dict[str, Any]:
 
 
 @app.get("/aircraft/{icao24}/track")
-def aircraft_track(icao24: str, db: Session = Depends(get_db)) -> dict[str, Any]:
-    positions = db.scalars(
-        select(Position).where(Position.icao24 == icao24).order_by(Position.ts)
-    ).all()
+def aircraft_track(
+    icao24: str, db: Session = Depends(get_db), region: str | None = None
+) -> dict[str, Any]:
+    """One aircraft's fixes and its aligned integrity series, scoped to a single region.
+
+    Scoped for the same reason /tracks is: one ICAO24 can be persisted under more than one
+    region in the same database (a live slice and a backfilled or OpenSky-research one), and
+    merging them zig-zags the geometry and interleaves two sources' NIC/NACp into one series
+    — an integrity history that never happened. /tracks guarded against this and its sibling
+    here did not.
+
+    Without an explicit `region` the aircraft's most recent one is used, and the region that
+    answered is reported back rather than left for the caller to assume.
+    """
+    scope = region
+    if scope is None:
+        scope = db.scalar(
+            select(Position.region)
+            .where(Position.icao24 == icao24)
+            .order_by(Position.ts.desc())
+            .limit(1)
+        )
+    q = select(Position).where(Position.icao24 == icao24)
+    # A NULL region is its own scope — historical rows predating region stamping must not be
+    # silently folded into a named lane.
+    q = q.where(Position.region.is_(None) if scope is None else Position.region == scope)
+    positions = db.scalars(q.order_by(Position.ts)).all()
     if not positions:
         raise HTTPException(404, "no positions for this aircraft")
     return {
@@ -206,6 +229,7 @@ def aircraft_track(icao24: str, db: Session = Depends(get_db)) -> dict[str, Any]
         "properties": {
             "icao24": icao24,
             "n": len(positions),
+            "region": scope,
             # Integrity series stay index-aligned with timestamps. Missing reports remain
             # null rather than becoming zero (which would fabricate a GNSS collapse).
             "ts_series": [utc_naive(p.ts).isoformat() for p in positions],

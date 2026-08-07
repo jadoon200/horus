@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -130,6 +131,14 @@ class Settings(BaseSettings):
     # mismatch is reported and scoring is refused so a served model cannot silently drift
     # from the benchmarked freeze (the maritime sibling's discipline). Empty = no pin.
     anomaly_artifact_sha256: str = ""
+    # Which frozen artifact `/score-track` and the batch pass load. Configurable because two
+    # different models legitimately live in one checkout: the real-data freeze (SG-AIR-v1,
+    # trained by scripts/train_anomaly) and the synthetic one the demo seed bakes. They used
+    # to share this path, so seeding the demo locally silently overwrote the recorded freeze.
+    # The demo seeder now writes `anomaly_demo_artifact_path` and the deploy points here at
+    # it; the real lane keeps this default to itself.
+    anomaly_artifact_path: Path = Path("data/models/gru-air-anomaly.pt")
+    anomaly_demo_artifact_path: Path = Path("data/models/gru-air-demo.pt")
     # Bound the stateless inference route's input so a pasted track can't balloon a request.
     score_track_max_points: int = 4_000
 
