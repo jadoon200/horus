@@ -20,7 +20,6 @@ import torch
 from torch import Tensor, nn
 
 N_FEATURES = 5  # [dlat_km, dlon_km, step_len_km, turn_rad, dalt_kft]
-ARTIFACT_PATH = Path("data/models/gru-air-anomaly.pt")
 
 # Below this, a channel's training spread is indistinguishable from "it never moved".
 _DEGENERATE_STD = 1e-6
@@ -53,10 +52,24 @@ def artifact_sha256(path: Path | None = None) -> str | None:
     one is visible rather than silent. The default path resolves at call time so an override
     is honoured.
     """
-    path = path or ARTIFACT_PATH
+    path = path or artifact_path()
     if not path.exists():
         return None
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def artifact_path() -> Path:
+    """The frozen artifact this process loads and saves.
+
+    Resolved from settings at call time rather than fixed at import, because two different
+    models legitimately live in one checkout: the real-data freeze (SG-AIR-v1) and the
+    synthetic one the demo bakes. They shared a hard-coded path, so seeding the demo locally
+    silently overwrote the recorded freeze. The demo seeder now writes its own path and the
+    deploy points `HORUS_ANOMALY_ARTIFACT_PATH` at it.
+    """
+    from horus.config import get_settings
+
+    return get_settings().anomaly_artifact_path
 
 
 class GRUAutoencoder(nn.Module):
@@ -97,9 +110,9 @@ class AnomalyModel:
         return out
 
     def save(self, path: Path | None = None) -> None:
-        # Resolve the default at call time, not at def time, so an overridden ARTIFACT_PATH
-        # (config, tests) is honoured rather than frozen into the signature.
-        path = path or ARTIFACT_PATH
+        # Resolve the default at call time, not at def time, so a configured path
+        # is honoured rather than frozen into the signature.
+        path = path or artifact_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(
             {
@@ -115,7 +128,7 @@ class AnomalyModel:
 
 
 def load_model(path: Path | None = None) -> AnomalyModel | None:
-    path = path or ARTIFACT_PATH
+    path = path or artifact_path()
     if not path.exists():
         return None
     blob: dict[str, Any] = torch.load(path, weights_only=False)

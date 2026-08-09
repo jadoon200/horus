@@ -21,7 +21,7 @@ from sqlalchemy import select
 
 from horus.db.base import session_scope
 from horus.db.models import Track
-from horus.detect.seq_anomaly import ARTIFACT_PATH, artifact_sha256, train_model
+from horus.detect.seq_anomaly import artifact_path, artifact_sha256, train_model
 from horus.logging import configure_logging, get_logger
 
 log = get_logger(__name__)
@@ -49,7 +49,7 @@ def main() -> None:
     model = train_model(sequences, hidden=args.hidden, epochs=args.epochs)
     model.save()
     sha = artifact_sha256()
-    print(f"\nfroze {len(sequences)} real tracks -> {ARTIFACT_PATH}")
+    print(f"\nfroze {len(sequences)} real tracks -> {artifact_path()}")
     print(f"artifact SHA-256: {sha}")
     print(f"threshold (p99 train reconstruction error): {model.threshold:.6f}")
     print("\nrecord this SHA in docs/EVAL.md and set HORUS_ANOMALY_ARTIFACT_SHA256 to pin it.")
