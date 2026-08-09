@@ -16,7 +16,7 @@ fused into a composite air picture over the Singapore FIR neighbourhood.
 > **Status: v2 next stage complete, gated, merged, and exercised on real ADS-B.** Collection,
 > the six-detector battery, frozen GRU inference, composite picture, read-only API + ARGUS
 > evidence bridge, joint HORUS/PHAROS review, and explainer-first dashboard are in place —
-> 99 tests, strict mypy, three CI lanes, and browser verification. A fixed evaluation
+> a full test suite, strict mypy, three CI lanes, and browser verification. A fixed evaluation
 > snapshot spans **75.8 hours / 253,935 positions / 1,600 aircraft** and clears the stricter
 > clean-clock two-cycle gate after excluding outage-distorted hours. Exact results and
 > limitations are in [docs/EVAL.md](docs/EVAL.md); the completed milestone ledger is in
@@ -117,7 +117,7 @@ make up                                             # Postgres (host port 5435) 
 ```
 
 The dedicated `horus` environment is the supported development path; `make check` is
-self-contained and runs the same scoped ruff, strict-mypy, and 99-test gate as CI.
+self-contained and runs the same scoped ruff, strict-mypy, and pytest gate as CI.
 
 ## Deploy
 

@@ -22,6 +22,28 @@ from torch import Tensor, nn
 N_FEATURES = 5  # [dlat_km, dlon_km, step_len_km, turn_rad, dalt_kft]
 ARTIFACT_PATH = Path("data/models/gru-air-anomaly.pt")
 
+# Below this, a channel's training spread is indistinguishable from "it never moved".
+_DEGENERATE_STD = 1e-6
+
+
+def _train_scale(std: np.ndarray) -> np.ndarray:
+    """Per-channel divisor for the frozen scaler, with dead channels neutralised.
+
+    A channel that never varied in training carries no information, and the scaler is
+    *persisted* — it is later applied to tracks the training population never contained.
+    Clamping its divisor to a tiny epsilon does not neutralise such a channel, it turns it
+    into a ~1e6 amplifier: the synthetic demo population holds altitude exactly constant, so
+    the baked model divided `dalt_kft` by 1e-6 and scored an ordinary 2,000 ft descent at a
+    reconstruction error of 1.9e8 against a threshold of 13 — "anomalous" by a factor of ten
+    million, on the most routine thing an aircraft does.
+
+    Unit scale is the honest divisor instead. Training data is *at* the mean on a dead
+    channel, so it still normalises to zero and neither the network nor the threshold moves;
+    a scored track that does vary there now contributes in its own units rather than an
+    exploded one.
+    """
+    return np.where(std < _DEGENERATE_STD, 1.0, std)
+
 
 def artifact_sha256(path: Path | None = None) -> str | None:
     """SHA-256 of the frozen artifact file, or None if it does not exist.
@@ -132,7 +154,7 @@ def train_model(
     # Normalization fitted on the TRAIN partition only (the PHAROS leakage lesson).
     flat = np.concatenate([np.asarray(s, dtype=np.float64) for s in train])
     mean = flat.mean(axis=0)
-    std = np.maximum(flat.std(axis=0), 1e-6)
+    std = _train_scale(flat.std(axis=0))
 
     def to_tensor(batch: list[list[list[float]]]) -> Tensor:
         arr = np.stack([(np.asarray(s, dtype=np.float32) - mean) / std for s in batch])

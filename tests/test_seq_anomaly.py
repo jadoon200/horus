@@ -3,7 +3,7 @@ import math
 import numpy as np
 
 from horus.detect.anomaly import iforest_scores, pca_scores
-from horus.detect.seq_anomaly import load_model, train_model
+from horus.detect.seq_anomaly import _DEGENERATE_STD, load_model, train_model
 
 
 def _straight(n: int = 63, step: float = 5.0, jitter_seed: int = 0) -> list[list[float]]:
@@ -41,6 +41,30 @@ def test_gru_ranks_orbit_above_straight_population(tmp_path) -> None:  # type: i
     assert loaded is not None
     assert np.allclose(loaded.errors([orbit]), model.errors([orbit]))
     assert loaded.threshold == model.threshold
+
+
+def test_dead_channel_does_not_amplify_an_ordinary_climb() -> None:
+    """A channel that never varied in training must be neutral, not a 1e6 amplifier.
+
+    The synthetic demo population holds altitude exactly constant, so the frozen scaler's
+    `dalt_kft` divisor used to be clamped to 1e-6. That is fine for the training data (which
+    sits at the mean) but the scaler is *served*: an ordinary descent posted to `/score-track`
+    normalised to ~1e6 and scored 1.9e8 against a threshold of 13.
+    """
+    population = [_straight(jitter_seed=i) for i in range(20)]
+    assert all(step[4] == 0.0 for seq in population for step in seq), "fixture must be dead"
+    model = train_model(population, epochs=30, seed=7)
+
+    assert model.std[4] == 1.0, "a dead channel gets unit scale, not an epsilon divisor"
+    # The live channels are untouched, and training data still normalises to zero on the
+    # dead one — so neither the network nor the population threshold moved.
+    assert all(s > _DEGENERATE_STD for s in model.std[:4])
+
+    level = _straight(jitter_seed=99)
+    climbing = [[*step[:4], 0.05] for step in level]  # a 50 ft step: routine, not exotic
+    level_error, climb_error = model.errors([level, climbing])
+    assert climb_error < model.threshold, "an ordinary climb is not an anomaly"
+    assert climb_error < level_error + 1.0, "the dead channel must stay a small contribution"
 
 
 def test_baselines_run_on_flattened_features() -> None:
