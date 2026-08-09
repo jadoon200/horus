@@ -249,8 +249,14 @@ export default function AirPicture() {
           <span className="key"><i className="sw none" /> unscoreable</span>
           {cov && (
             <span className="cov-count">
-              worst over {cov.window_hours} h · {cov.cells_unscoreable}/{cov.cells_total}{' '}
-              unscoreable — fewer than {cov.min_aircraft} aircraft, so not judged
+              {/* A baked snapshot is aggregated whole, so the API reports no window and the
+                  caption must not invent one — it used to read "worst over 6 h" over a demo
+                  seed that was never filtered by time. */}
+              {cov.window_hours === null
+                ? 'worst over the whole snapshot'
+                : `worst over ${cov.window_hours} h`}{' '}
+              · {cov.cells_unscoreable}/{cov.cells_total} unscoreable — fewer than{' '}
+              {cov.min_aircraft} aircraft, so not judged
             </span>
           )}
           {cellSizes.length > 1 && (

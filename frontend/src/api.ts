@@ -40,7 +40,8 @@ export interface CoverageCell {
 }
 
 export interface Coverage {
-  window_hours: number
+  /** Null when no window was applied — a baked demo snapshot is aggregated whole. */
+  window_hours: number | null
   cell_windows: number
   cells_total: number
   cells_scoreable: number

@@ -326,7 +326,8 @@ def gnss_coverage(
     # A baked demo has no rolling window — its data sits at a fixed past time, so a
     # "last N hours" filter would return an empty map. In demo mode the whole snapshot is
     # shown and the UI labels it a snapshot.
-    since = None if get_settings().demo_mode else datetime.now(UTC) - timedelta(hours=hours)
+    demo = get_settings().demo_mode
+    since = None if demo else datetime.now(UTC) - timedelta(hours=hours)
     cells = coverage_grid(db, region, since=since)
 
     # The grid is cell-WINDOWS (space x time), so over a six-hour request the same patch of
@@ -370,7 +371,10 @@ def gnss_coverage(
 
     out = list(merged.values())
     return {
-        "window_hours": hours,
+        # The window that was actually applied. In demo mode none was, and reporting the
+        # requested `hours` anyway had the dashboard captioning a baked snapshot "worst over
+        # 6 h" — a six-hour aggregation the deployed demo never performed.
+        "window_hours": None if demo else hours,
         "cell_windows": len(cells),
         "cells_total": len(out),
         "cells_scoreable": sum(1 for c in out if c["scoreable"]),
