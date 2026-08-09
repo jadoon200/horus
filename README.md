@@ -7,10 +7,13 @@ source-rated, human-review **air incidents**: GNSS interference (jamming), dark 
 (transponder gaps), zone incursions, kinematic impossibilities, and trajectory anomalies —
 fused into a composite air picture over the Singapore FIR neighbourhood.
 
-> **The air lane of the portfolio.** Sibling to [SENTINEL](../sentinel) (cyber threat
-> intelligence), [ARGUS](../argus) (all-source / information defence) and
-> [PHAROS](../pharos) (maritime GEOINT). PHAROS watches the water; HORUS watches the sky
-> above it — together a joint air + sea domain picture over the world's busiest strait.
+> **The air lane of the portfolio.** Sibling to
+> [SENTINEL](https://github.com/jadoon200/sentinel) (cyber threat intelligence),
+> [ARGUS](https://github.com/jadoon200/argus) (all-source / information defence),
+> [PHAROS](https://github.com/jadoon200/pharos) (maritime GEOINT) and
+> [DELPHI](https://github.com/jadoon200/delphi) (infrastructure capacity). PHAROS watches the
+> water; HORUS watches the sky above it — together a joint air + sea domain picture over the
+> world's busiest strait.
 > Named for the falcon-eyed sky god (a deliberate pair with PHAROS's Alexandrian lighthouse).
 
 > **Status: v2 next stage complete, gated, merged, and exercised on real ADS-B.** Collection,
